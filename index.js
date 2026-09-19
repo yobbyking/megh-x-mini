@@ -382,16 +382,25 @@ async function handleCall(sock, calls) {
   for(const c of calls) { if(c.status==='offer') { try{await sock.rejectCall(c.id,c.from);await sock.sendMessage(c.from,{text:`🚫 Calls rejected. ${CONFIG.botName} is a bot.`},{quoted:createFakeContact({key:{participant:c.from,remoteJid:c.from}})});}catch{} } }
 }
 
-// ─── Baileys ───────────────────────────────────────────────────────
-let sock = null;
-let botConnected = false;
+// ─── Baileys (MULTI-USER) ──────────────────────────────────────────
+// Each paired user gets their own auth folder + socket, all running in
+// the same process. Anyone can pair → connect → use the bot.
 
-async function startBaileys() {
-  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.authDir);
+const userSessions = new Map(); // phone → { sock, authFolder, connected, userInfo }
+
+async function startUserBot(phone, authFolder) {
+  // If already running, skip
+  if (userSessions.has(phone) && userSessions.get(phone).connected) {
+    console.log(`[BOT ${phone}] Already running — skip`);
+    return;
+  }
+
+  fs.mkdirSync(authFolder, { recursive: true });
+  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version, isLatest } = await fetchLatestBaileysVersion();
-  console.log('  ℹ Baileys v' + version.join('.') + (isLatest ? ' (latest)' : ''));
+  console.log(`[BOT ${phone}] Baileys v${version.join('.')}${isLatest ? ' (latest)' : ''}`);
 
-  sock = makeWASocket({
+  const userSock = makeWASocket({
     version, auth: state,
     printQRInTerminal: false, logger,
     browser: CONFIG.browser,
@@ -401,58 +410,73 @@ async function startBaileys() {
     getMessage: async () => proto.Message.fromObject({})
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  const entry = { sock: userSock, authFolder, connected: false, userInfo: null };
+  userSessions.set(phone, entry);
 
-  sock.ev.on('connection.update', async (update) => {
+  userSock.ev.on('creds.update', saveCreds);
+
+  userSock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     if (connection === 'open') {
-      botConnected = true;
-      console.log('\n  ✅ WhatsApp connected as', sock.user?.id);
+      entry.connected = true;
+      entry.userInfo = { id: userSock.user.id, name: userSock.user.name || userSock.user.notifyName || phone };
+      console.log(`\n  ✅ [BOT ${phone}] Connected as ${userSock.user.id}`);
       try {
-        const userName = sock.user?.name || sock.user?.notifyName || getSetting('ownerName', CONFIG.ownerName);
+        const userName = userSock.user.name || userSock.user.notifyName || phone;
         const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        printConnected({ botName: getSetting('botName', CONFIG.botName), ownerName: userName, time });
+        if (phone === CONFIG.ownerNumber) printConnected({ botName: getSetting('botName', CONFIG.botName), ownerName: userName, time });
         const banner = [
           '┏━━━━━━✧ CONNECTED ✧━━━━━━━',
           '┃✧ Bot: ' + getSetting('botName', CONFIG.botName),
           '┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]',
-          '┃✧ Owner: ' + userName,
+          '┃✧ User: ' + userName,
           '┃✧ Platform: 🖥️ Render',
           '┃✧ Status: online',
           '┃✧ Time: ' + time,
           '┃✧ Repo: ' + CONFIG.repoUrl,
           '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'
         ].join('\n');
-        await sock.sendMessage(sock.user.id, { text: banner });
-        console.log('  ✓ Sent CONNECTED banner to user WhatsApp');
-      } catch (e) { console.log('  ⚠ Banner failed:', e.message); }
-      console.log('  🟢 Bot online. Listening for commands…\n');
+        await userSock.sendMessage(userSock.user.id, { text: banner });
+        console.log(`  ✓ [BOT ${phone}] Sent CONNECTED banner`);
+      } catch (e) { console.log(`  ⚠ [BOT ${phone}] Banner failed: ${e.message}`); }
+      console.log(`  🟢 [BOT ${phone}] Online. Listening for commands…\n`);
     }
     if (connection === 'close') {
-      botConnected = false;
+      entry.connected = false;
       const sc = lastDisconnect?.error?.output?.statusCode;
-      console.log('  ⚠ Closed. Status:', sc);
-      if (sc === DisconnectReason.loggedOut) { console.log('  ✗ Logged out. Re-pair via the site.'); return; }
-      setTimeout(() => startBaileys(), sc === 515 || sc === 410 ? 3000 : 5000);
+      console.log(`  ⚠ [BOT ${phone}] Closed. Status: ${sc}`);
+      if (sc === DisconnectReason.loggedOut) {
+        console.log(`  ✗ [BOT ${phone}] Logged out — re-pair via site.`);
+        userSessions.delete(phone);
+        try { fs.rmSync(authFolder, { recursive: true, force: true }); } catch {}
+        return;
+      }
+      setTimeout(() => startUserBot(phone, authFolder), sc === 515 || sc === 410 ? 3000 : 5000);
     }
   });
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  userSock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
-      try { await handleAutoPresence(sock, msg); await handleMessage(sock, msg); await handleChatbot(sock, msg); }
-      catch(e) { console.error('  ✗ Handler error:', e.message); }
+      try { await handleAutoPresence(userSock, msg); await handleMessage(userSock, msg); await handleChatbot(userSock, msg); }
+      catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
     }
   });
-  sock.ev.on('call', async (calls) => { try{ await handleCall(sock, calls); }catch{} });
-  return sock;
+  userSock.ev.on('call', async (calls) => { try{ await handleCall(userSock, calls); }catch{} });
+  return userSock;
 }
 
-// ─── Built-in pairing ──────────────────────────────────────────────
+// ─── Built-in pairing (MULTI-USER) ─────────────────────────────────
 const pairingSessions = new Map();
 
 async function startPairing(phone) {
   phone = normalizePhone(phone);
-  if (!phone) throw new Error('Invalid phone number');
+  if (!phone) throw new Error('Invalid phone number. Use digits only with country code (e.g. 254712345678).');
+
+  // If this user already has an active bot, reject re-pair
+  if (userSessions.has(phone) && userSessions.get(phone).connected) {
+    throw new Error('This number is already paired and connected. Use .menu in WhatsApp.');
+  }
+
   const webId = 'web_' + crypto.randomBytes(8).toString('hex');
   const sessionFolder = path.join(CONFIG.dataDir, 'pairing_tmp', webId);
   fs.mkdirSync(sessionFolder, { recursive: true });
@@ -474,33 +498,30 @@ async function startPairing(phone) {
     const { connection, qr, pairingCode } = u;
     if (pairingCode) { entry.code = pairingCode; entry.status = 'code_sent'; }
     if (connection === 'open') {
-      // ★ Pair success — copy creds to the main auth folder, then start the bot
       entry.status = 'linked';
-      console.log(`[PAIR ${webId}] ✓ Linked! Copying creds to main auth folder…`);
-      // Copy all files from sessionFolder to CONFIG.authDir
-      for (const f of fs.readdirSync(sessionFolder)) {
-        fs.copyFileSync(path.join(sessionFolder, f), path.join(CONFIG.authDir, f));
-      }
+      console.log(`[PAIR ${webId}] ✓ Linked for +${phone}! Starting their bot…`);
       // Send the 3 owner messages
       try {
         const jid = pairSock.user.id;
-        const sessionId = 'megh-ultra:~' + webId + '~' + Buffer.from(JSON.stringify({creds: state.creds, keys: {}})).toString('base64url');
         await pairSock.sendMessage(jid, { text: 'Generation session.....' });
         await new Promise(r => setTimeout(r, 800));
-        await pairSock.sendMessage(jid, { text: sessionId });
-        await new Promise(r => setTimeout(r, 800));
-        await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Bot is starting…\n🟢 Support: ${CONFIG.supportUrl}` });
-        console.log(`[PAIR ${webId}] ✓ 3 owner messages sent`);
-      } catch(e) { console.log(`[PAIR ${webId}] ⚠ Owner messages: ${e.message}`); }
+        await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Bot is starting…\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands\n🟢 Support: ${CONFIG.supportUrl}` });
+        console.log(`[PAIR ${webId}] ✓ Owner messages sent`);
+      } catch(e) { console.log(`[PAIR ${webId}] ⚠ Messages: ${e.message}`); }
       // Logout the pairing socket
       try { await pairSock.logout(); } catch{}
-      // Start the main bot
-      console.log(`[PAIR ${webId}] → Starting main bot…`);
-      setTimeout(() => startBaileys(), 2000);
+      // Move creds to a permanent folder for this user, then start their bot
+      const userAuthFolder = path.join(CONFIG.dataDir, 'auth', phone);
+      fs.mkdirSync(userAuthFolder, { recursive: true });
+      for (const f of fs.readdirSync(sessionFolder)) {
+        fs.copyFileSync(path.join(sessionFolder, f), path.join(userAuthFolder, f));
+      }
+      try { fs.rmSync(sessionFolder, { recursive: true, force: true }); } catch{}
+      // Start the bot for this user
+      setTimeout(() => startUserBot(phone, userAuthFolder), 2000);
     }
     if (connection === 'close') {
       if (entry.status === 'linked') return;
-      // Reconnect for fresh auth
       setTimeout(async () => {
         try {
           const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(sessionFolder);
@@ -510,19 +531,23 @@ async function startPairing(phone) {
           s.ev.on('connection.update', (u2) => {
             if (u2.connection === 'open') {
               entry.status = 'linked';
-              for (const f of fs.readdirSync(sessionFolder)) fs.copyFileSync(path.join(sessionFolder, f), path.join(CONFIG.authDir, f));
-              console.log(`[PAIR ${webId}] ✓ Linked (reconnect)! Starting main bot…`);
-              setTimeout(() => startBaileys(), 2000);
+              console.log(`[PAIR ${webId}] ✓ Linked (reconnect) for +${phone}! Starting bot…`);
+              const userAuthFolder = path.join(CONFIG.dataDir, 'auth', phone);
+              fs.mkdirSync(userAuthFolder, { recursive: true });
+              for (const f of fs.readdirSync(sessionFolder)) fs.copyFileSync(path.join(sessionFolder, f), path.join(userAuthFolder, f));
+              try { fs.rmSync(sessionFolder, { recursive: true, force: true }); } catch{}
+              try { s.logout(); } catch{}
+              setTimeout(() => startUserBot(phone, userAuthFolder), 2000);
             }
           });
-        } catch(e) { console.error(`[PAIR ${webId}] Reconnect failed:`, e.message); }
+        } catch(e) { console.error(`[PAIR ${webId}] Reconnect failed: ${e.message}`); }
       }, 3000);
     }
   });
 
   // Wait for QR event (socket ready), then request pairing code
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Socket timeout')), 60000);
+    const timeout = setTimeout(() => reject(new Error('Socket timeout — WhatsApp may be rate-limiting. Retry in 30s.')), 60000);
     const handler = (u) => {
       if (u.qr || u.connection === 'open') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); resolve(); }
       if (u.connection === 'close') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); reject(new Error('Connection closed')); }
@@ -542,7 +567,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/api/health', (req, res) => res.json({ ok: true, botConnected, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, connectedUsers: userSessions.size, users: [...userSessions.keys()], ts: Date.now() }));
 
 app.post('/api/pair', async (req, res) => {
   try {
@@ -666,17 +691,31 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  💾 SQLite:        data/bot.db\n`);
 });
 
+// ─── On boot: reconnect any previously-paired users ──────────────
+// Scan data/auth/ for existing auth folders (one per phone number)
+// and start a bot for each. This survives Render restarts.
+function reconnectAllUsers() {
+  const authRoot = path.join(CONFIG.dataDir, 'auth');
+  if (!fs.existsSync(authRoot)) return;
+  const phones = fs.readdirSync(authRoot).filter(d => {
+    const p = path.join(authRoot, d);
+    return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'creds.json'));
+  });
+  if (!phones.length) return;
+  console.log(`  ℹ Found ${phones.length} existing session(s) — reconnecting…`);
+  for (const phone of phones) {
+    const authFolder = path.join(authRoot, phone);
+    setTimeout(() => startUserBot(phone, authFolder).catch(e => console.error(`  ✗ [BOT ${phone}] Reconnect failed: ${e.message}`)), 1000);
+  }
+}
+
 // Download menu image in background
 downloadMenuImage().catch(() => {});
 
-// If SESSION_ID env var is set OR auth folder has creds, start bot directly
-const hasCreds = fs.existsSync(path.join(CONFIG.authDir, 'creds.json'));
-if (CONFIG.sessionId || hasCreds) {
-  console.log('  ℹ Existing session found — starting bot directly…\n');
-  startBaileys().catch(e => console.error('  ✗ Bot start failed:', e.message));
-} else {
-  console.log('  ℹ No session found — visit the pairing site to pair.\n');
-}
+// Reconnect any existing sessions (survives Render restarts)
+reconnectAllUsers();
+
+console.log('  ℹ Bot is ready. Visit the pairing site to pair a new number.\n');
 
 process.on('SIGTERM', () => { console.log('\n  ⊘ SIGTERM — shutting down'); process.exit(0); });
 process.on('SIGINT', () => { console.log('\n  ⊘ SIGINT — shutting down'); process.exit(0); });
