@@ -991,6 +991,11 @@ async function startUserBot(phone, authFolder) {
 }
 
 // ─── Built-in pairing (MULTI-USER) ─────────────────────────────────
+// ★ KEY INSIGHT: Don't create a separate bot socket after pairing.
+// Just keep the pairing socket alive and register the message handler
+// on it. This avoids the race condition where creds aren't fully
+// written to disk before the new socket tries to read them.
+
 const pairingSessions = new Map();
 
 async function startPairing(phone) {
@@ -1003,13 +1008,16 @@ async function startPairing(phone) {
   }
 
   const webId = 'web_' + crypto.randomBytes(8).toString('hex');
-  const sessionFolder = path.join(CONFIG.dataDir, 'pairing_tmp', webId);
-  fs.mkdirSync(sessionFolder, { recursive: true });
+  // ★ Use the PERMANENT auth folder directly (data/auth/<phone>/)
+  //    So we don't need to copy files — the creds are already where
+  //    startUserBot expects them.
+  const authFolder = path.join(CONFIG.dataDir, 'auth', phone);
+  fs.mkdirSync(authFolder, { recursive: true });
 
-  const entry = { phone, status: 'pending', code: null, sock: null, authFolder: sessionFolder };
+  const entry = { phone, status: 'pending', code: null, sock: null, authFolder };
   pairingSessions.set(webId, entry);
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
+  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
   const pairSock = makeWASocket({
     version, auth: state, printQRInTerminal: false, logger,
@@ -1019,51 +1027,123 @@ async function startPairing(phone) {
   entry.sock = pairSock;
 
   pairSock.ev.on('creds.update', saveCreds);
+
+  let botHandlersRegistered = false;
+
   pairSock.ev.on('connection.update', async (u) => {
-    const { connection, qr, pairingCode } = u;
+    const { connection, qr, pairingCode, lastDisconnect } = u;
+    console.log(`[PAIR ${webId}] conn: ${connection} code=${lastDisconnect?.error?.output?.statusCode} pc=${!!pairingCode}`);
+
     if (pairingCode) { entry.code = pairingCode; entry.status = 'code_sent'; }
+
     if (connection === 'open') {
       entry.status = 'linked';
-      console.log(`[PAIR ${webId}] ✓ Linked for +${phone}! Starting their bot…`);
-      // Send the 3 owner messages
+      const jid = pairSock.user.id;
+      const userName = pairSock.user.name || pairSock.user.notifyName || phone;
+      console.log(`[PAIR ${webId}] ✓ Linked for +${phone} (${jid})`);
+
+      // ★ Register this socket as the user's bot IN-PLACE
+      //    Don't create a new socket — just keep this one alive
+      userSessions.set(phone, { sock: pairSock, authFolder, connected: true, userInfo: { id: jid, name: userName } });
+
+      // Send the owner messages
       try {
-        const jid = pairSock.user.id;
         await pairSock.sendMessage(jid, { text: 'Generation session.....' });
         await new Promise(r => setTimeout(r, 800));
-        await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Bot is starting…\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands\n🟢 Support: ${CONFIG.supportUrl}` });
-        console.log(`[PAIR ${webId}] ✓ Owner messages sent`);
+        await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands\n🟢 Support: ${CONFIG.supportUrl}` });
+        await new Promise(r => setTimeout(r, 800));
+        // Send CONNECTED banner
+        const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        const banner = [
+          '┏━━━━━━✧ CONNECTED ✧━━━━━━━',
+          '┃✧ Bot: ' + getSetting('botName', CONFIG.botName),
+          '┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]',
+          '┃✧ User: ' + userName,
+          '┃✧ Platform: 🖥️ Render',
+          '┃✧ Status: online',
+          '┃✧ Time: ' + time,
+          '┃✧ Repo: ' + CONFIG.repoUrl,
+          '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'
+        ].join('\n');
+        await pairSock.sendMessage(jid, { text: banner });
+        console.log(`[PAIR ${webId}] ✓✓ All owner messages + CONNECTED banner sent`);
       } catch(e) { console.log(`[PAIR ${webId}] ⚠ Messages: ${e.message}`); }
-      // ★ DON'T logout — that revokes the WhatsApp link!
-      // Just end the WS (close without logout signal) so the link stays active.
-      try { await pairSock.end(new Error('pairing-complete')); } catch{}
-      // Move creds to a permanent folder for this user, then start their bot
-      const userAuthFolder = path.join(CONFIG.dataDir, 'auth', phone);
-      fs.mkdirSync(userAuthFolder, { recursive: true });
-      for (const f of fs.readdirSync(sessionFolder)) {
-        fs.copyFileSync(path.join(sessionFolder, f), path.join(userAuthFolder, f));
+
+      // ★ Register message handlers ONCE on this socket
+      if (!botHandlersRegistered) {
+        botHandlersRegistered = true;
+        pairSock.ev.on('messages.upsert', async ({ messages }) => {
+          for (const msg of messages) {
+            try { await handleAutoPresence(pairSock, msg); await handleMessage(pairSock, msg); await handleChatbot(pairSock, msg); }
+            catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
+          }
+        });
+        pairSock.ev.on('call', async (calls) => { try{ await handleCall(pairSock, calls); }catch{} });
+        console.log(`[PAIR ${webId}] ✓ Message handlers registered — bot is LIVE for +${phone}`);
       }
-      try { fs.rmSync(sessionFolder, { recursive: true, force: true }); } catch{}
-      // Start the bot for this user (5s delay so WhatsApp fully registers the link)
-      setTimeout(() => startUserBot(phone, userAuthFolder), 5000);
+
+      console.log(`  🟢 [BOT ${phone}] Online. Listening for commands…\n`);
     }
+
     if (connection === 'close') {
-      if (entry.status === 'linked') return;
+      const sc = lastDisconnect?.error?.output?.statusCode;
+      console.log(`[PAIR ${webId}] ❌ Closed — code=${sc} status=${entry.status}`);
+
+      if (entry.status === 'linked') {
+        // ★ Bot was linked but WS closed — RECONNECT using the SAME auth folder
+        //    The creds are already saved there. Just recreate the socket.
+        console.log(`[PAIR ${webId}] ↻ Reconnecting bot for +${phone}…`);
+        // Mark as disconnected
+        if (userSessions.has(phone)) userSessions.get(phone).connected = false;
+        setTimeout(() => {
+          startUserBot(phone, authFolder).catch(e => console.error(`  ✗ [BOT ${phone}] Reconnect failed: ${e.message}`));
+        }, sc === 515 || sc === 410 ? 3000 : 5000);
+        return;
+      }
+
+      // Pairing not yet complete — reconnect for pairing
+      if (sc === DisconnectReason.loggedOut || sc === 410) {
+        console.log(`[PAIR ${webId}] ✗ Logged out — not retrying`);
+        entry.status = 'failed';
+        return;
+      }
+      // Reconnect with same auth folder
       setTimeout(async () => {
         try {
-          const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(sessionFolder);
-          const s = makeWASocket({ version, auth: s2, printQRInTerminal: false, logger, browser: CONFIG.browser, qrTimeout: 120000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
+          const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(authFolder);
+          const s = makeWASocket({ version, auth: s2, printQRInTerminal: false, logger, browser: CONFIG.browser, qrTimeout: 120000, keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
           entry.sock = s;
           s.ev.on('creds.update', sc2);
           s.ev.on('connection.update', (u2) => {
-            if (u2.connection === 'open') {
+            const { connection: c2, lastDisconnect: ld2, pairingCode: pc2 } = u2;
+            if (pc2) { entry.code = pc2; entry.status = 'code_sent'; }
+            if (c2 === 'open') {
               entry.status = 'linked';
-              console.log(`[PAIR ${webId}] ✓ Linked (reconnect) for +${phone}! Starting bot…`);
-              const userAuthFolder = path.join(CONFIG.dataDir, 'auth', phone);
-              fs.mkdirSync(userAuthFolder, { recursive: true });
-              for (const f of fs.readdirSync(sessionFolder)) fs.copyFileSync(path.join(sessionFolder, f), path.join(userAuthFolder, f));
-              try { fs.rmSync(sessionFolder, { recursive: true, force: true }); } catch{}
-              try { s.end(new Error('pairing-complete')); } catch{}
-              setTimeout(() => startUserBot(phone, userAuthFolder), 5000);
+              const jid = s.user.id;
+              const userName = s.user.name || s.user.notifyName || phone;
+              console.log(`[PAIR ${webId}] ✓ Linked (reconnect) for +${phone}!`);
+              userSessions.set(phone, { sock: s, authFolder, connected: true, userInfo: { id: jid, name: userName } });
+              // Send messages
+              s.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands` }).catch(()=>{});
+              const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Platform: 🖥️ Render','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,'┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
+              s.sendMessage(jid, { text: banner }).catch(()=>{});
+              // Register handlers
+              s.ev.on('messages.upsert', async ({ messages }) => {
+                for (const msg of messages) {
+                  try { await handleAutoPresence(s, msg); await handleMessage(s, msg); await handleChatbot(s, msg); }
+                  catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
+                }
+              });
+              s.ev.on('call', async (calls) => { try{ await handleCall(s, calls); }catch{} });
+              console.log(`  🟢 [BOT ${phone}] Online (reconnect). Listening…\n`);
+            }
+            if (c2 === 'close') {
+              const sc2 = ld2?.error?.output?.statusCode;
+              if (entry.status === 'linked') {
+                if (userSessions.has(phone)) userSessions.get(phone).connected = false;
+                setTimeout(() => startUserBot(phone, authFolder).catch(()=>{}), sc2 === 515 || sc2 === 410 ? 3000 : 5000);
+              }
             }
           });
         } catch(e) { console.error(`[PAIR ${webId}] Reconnect failed: ${e.message}`); }
