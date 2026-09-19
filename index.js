@@ -53,7 +53,7 @@ const CONFIG = {
   ownerName: process.env.OWNER_NAME || 'killer',
   ownerNumber: process.env.OWNER_NUMBER || '254795314221',
   prefix: process.env.PREFIX || '.',
-  mode: 'private',
+  mode: 'public', // 'public' = everyone can use, 'private' = owner-only
   sessionId: process.env.SESSION_ID || '',
   supportUrl: 'https://wa.me/message/25495314221',
   repoUrl: 'https://github.com/yobbyking/megh-x-mini',
@@ -359,7 +359,9 @@ async function handleMessage(sock, msg) {
   const senderNum = String(senderJid).split('@')[0].split(':')[0];
   const isGroup = msg.key.remoteJid.endsWith('@g.us');
   console.log(`[MSG] ${isGroup?'GROUP':'DM'} from ${senderNum}: ".${cmdName}"`);
-  if(getMode()==='private' && !isOwner(senderJid)) { await reply(sock, msg, '❌ *Only owner allowed* 💔\n\nThis bot is in private mode.'); return; }
+  // ★ Bot is for everyone — no owner-only gate by default.
+  // Owner check is only used for sensitive commands (kick, mode change, etc.)
+  // but regular commands work for ANYONE who messages the bot.
   try { await command.handler(sock, msg, args, { senderJid, senderNum, isGroup }); }
   catch(e) { console.error('  ✗ Command error:', e.message); try{await reply(sock,msg,'❌ '+e.message);}catch{} }
 }
