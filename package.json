@@ -1,7 +1,7 @@
 {
   "name": "megh-x-mini",
   "version": "1.0.0",
-  "description": "MEGH X-MINI — Premium mini WhatsApp bot. Owner-only, fake contact replies, anti commands, AI, audio, group management.",
+  "description": "MEGH X-MINI — Self-contained mini WhatsApp bot with built-in pairing. Deploy on Render/Railway, pair via web, bot connects instantly.",
   "main": "index.js",
   "type": "module",
   "engines": {
@@ -16,6 +16,8 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.0",
     "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
     "pino": "^9.4.0",
     "qrcode-terminal": "^0.12.0"
   }

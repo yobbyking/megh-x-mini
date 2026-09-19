@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: megh-x-mini
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OWNER_NUMBER
+        value: "254795314221"
+      - key: OWNER_NAME
+        value: "killer"
+      - key: PREFIX
+        value: "."
+      - key: BOT_NAME
+        value: "MEGH X-MINI"
