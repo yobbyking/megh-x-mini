@@ -156,17 +156,37 @@ function getMenuImage() { const p = path.join(CONFIG.dataDir, 'menu-image.png');
 
 // ─── Menu ──────────────────────────────────────────────────────────
 const COMMAND_LIST = {
-  main: ['menu','all','ping','repo','alive','pair','owner','runtime'],
-  ai: ['ai','gpt','gemini','blackbox','deepseek','llama','translate','story','joke','quote','fact','dare','truth'],
-  group: ['kick','promote','demote','tagall','hidetag','invite','close','open','tosgroup','setname'],
-  admin: ['setprefix','setbotname','setownername','setprofilepic','setmenuimage','setstatus','mode'],
-  anti: ['antidelete','antilink','antibadword','anticall','antibot','antispam','autoread','autotyping','autorecording','chatbot'],
-  media: ['sticker','vv','getdp','song','tls','qr'],
-  fun: ['8ball','coinflip','dice','rps','ship'],
-  info: ['whoami','botinfo','profile'],
+  main: ['menu','all','ping','repo','alive','pair','owner','runtime','list'],
+  ai: ['ai','gpt','gemini','blackbox','deepseek','llama','mistral','translate','summarize','explain','story','joke','quote','fact','dare','truth','flirt','rizz'],
+  group: ['kick','promote','demote','tagall','hidetag','invite','close','open','tosgroup','setname','setdesc','groupinfo','del','revoke'],
+  admin: ['setprefix','setbotname','setownername','setprofilepic','setmenuimage','setstatus','mode','block','unblock'],
+  anti: ['antidelete','antilink','antibadword','anticall','antibot','antispam','autoread','autotyping','autorecording','chatbot','autostatusview'],
+  download: ['url','apk','mediafire','tiktok','facebook','ig','twitter','song','yt','ytmp3','ytmp4','play','instagram','pinterest','gdrive'],
+  media: ['sticker','vv','tovv','getdp','tls','qr','toimage','toaudio','tomp3','emojimix','take','ss','carbon','nulis','tts','waste','memegen'],
+  tools: ['calc','weather','lyrics','wiki','define','tempmail','shorten','base64','uuid','timestamp','hex','binary','reverse','uppercase','lowercase'],
+  fun: ['8ball','coinflip','dice','rps','ship','horny','gay','smart','character','guess','slots'],
+  info: ['whoami','botinfo','profile','server','stats','uptime','ping2','timezone'],
+  converter: ['toimg','tosticker','toaudio','tovideo','togif','toptt','tomp3'],
+  games: ['truth','dare','riddle','wordgame','trivia','mathgame'],
+  logo: ['logo','neon','glitch','burn','crimson','golden','ice','fire','water','smoke','bokeh','rainbow','sparkle'],
 };
-const CAT_EMOJI = { main:'🤖', ai:'🧠', group:'👥', admin:'⚙️', anti:'🛡️', media:'🎬', fun:'🎮', info:'ℹ️' };
-const CAT_NAME = { main:'MAIN', ai:'AI', group:'GROUP', admin:'ADMIN', anti:'ANTI', media:'MEDIA', fun:'FUN', info:'INFO' };
+const CAT_EMOJI = { main:'🤖', ai:'🧠', group:'👥', admin:'⚙️', anti:'🛡️', download:'📥', media:'🎬', tools:'🔧', fun:'🎮', info:'ℹ️', converter:'🔄', games:'🎯', logo:'🎨' };
+const CAT_NAME = { main:'MAIN', ai:'AI', group:'GROUP', admin:'ADMIN', anti:'ANTI', download:'DOWNLOAD', media:'MEDIA', tools:'TOOLS', fun:'FUN', info:'INFO', converter:'CONVERTER', games:'GAMES', logo:'LOGO' };
+const CAT_DESC = {
+  main: 'Core commands — menu, ping, repo, pair',
+  ai: 'AI chat + creative — gpt, gemini, story',
+  group: 'Group management — kick, tag, promote',
+  admin: 'Bot settings — prefix, name, mode',
+  anti: 'Anti + Auto toggles — antidelete, autoread',
+  download: 'Download media — url, tiktok, song',
+  media: 'Media tools — sticker, vv, qr, ss',
+  tools: 'Utilities — calc, weather, lyrics, wiki',
+  fun: 'Games — 8ball, dice, dare, truth',
+  info: 'Info — whoami, botinfo, stats',
+  converter: 'Format converters — toimg, toaudio',
+  games: 'Mini games — riddle, trivia, mathgame',
+  logo: 'Logo maker — neon, glitch, fire',
+};
 
 function buildMainMenu() {
   const ownerName = getSetting('ownerName', CONFIG.ownerName);
@@ -198,20 +218,76 @@ _*Type ${prefix}all to see all commands*_`;
 function buildFullMenu() {
   const prefix = getSetting('prefix', CONFIG.prefix);
   const cats = Object.keys(COMMAND_LIST);
-  let out = `┏━━━━━━━✧ *${CONFIG.botName} ALL COMMANDS* ✧━━━━━━━\n\n`;
-  for (let i = 0; i < cats.length; i += 2) {
-    const left = cats[i], right = cats[i+1];
-    const lc = COMMAND_LIST[left], rc = right ? COMMAND_LIST[right] : [];
-    const maxRows = Math.max(lc.length, rc.length);
-    out += `${CAT_EMOJI[left]} *${smallCaps(CAT_NAME[left])} MENU*`.padEnd(28) + ` ${right ? `${CAT_EMOJI[right]} *${smallCaps(CAT_NAME[right])} MENU*` : ''}\n`;
-    for (let j = 0; j < maxRows; j++) {
-      const l = lc[j] ? `│✦ ${smallCaps(lc[j])}` : '';
-      const r = rc[j] ? `│✦ ${smallCaps(rc[j])}` : '';
-      out += `${l.padEnd(28)} ${r}\n`;
+  const totalCmds = Object.values(COMMAND_LIST).reduce((a,b) => a + b.length, 0);
+
+  let out = `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ ✦  *${smallCaps(CONFIG.botName)} · ALL COMMANDS*  ✦
+┃   ${totalCmds} commands · ${cats.length} categories
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+
+  // Single-row per category — clean, well-arranged, small caps
+  for (const cat of cats) {
+    const cmds = COMMAND_LIST[cat];
+    const emoji = CAT_EMOJI[cat];
+    const name = smallCaps(CAT_NAME[cat]);
+    out += `${emoji} *${name}*\n`;
+    // Each command on its own line, prefixed with ✦, in small caps
+    for (const c of cmds) {
+      out += `   ✦ ${smallCaps(c)}\n`;
     }
     out += '\n';
   }
-  out += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n_Type *${prefix}menu* for main menu_`;
+
+  out += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⬅️  Type *${prefix}menu* to go *BACK TO MENU*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  return out;
+}
+
+// ─── Category sub-menu (with BACK TO MENU) ──────────────────────────
+function buildCategoryMenu(cat) {
+  const prefix = getSetting('prefix', CONFIG.prefix);
+  const cmds = COMMAND_LIST[cat];
+  if (!cmds) return `❌ Category not found. Type ${prefix}list to see categories.`;
+  const emoji = CAT_EMOJI[cat];
+  const name = smallCaps(CAT_NAME[cat]);
+  const desc = CAT_DESC[cat] || '';
+  const total = cmds.length;
+
+  let out = `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  ${emoji}  *${name} MENU*  ·  ${total} commands
+┃  _${desc}_
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+
+  // Single column, each command with a description where possible
+  for (const c of cmds) {
+    const cmdObj = COMMANDS[c];
+    const cmdDesc = cmdObj?.desc || '';
+    out += `  ✦ *${prefix}${smallCaps(c)}*`;
+    if (cmdDesc) out += ` — _${cmdDesc}_`;
+    out += '\n';
+  }
+
+  out += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⬅️  Type *${prefix}menu* to go *BACK TO MENU*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  return out;
+}
+
+// ─── Category list ──────────────────────────────────────────────────
+function buildCategoryList() {
+  const prefix = getSetting('prefix', CONFIG.prefix);
+  const cats = Object.keys(COMMAND_LIST);
+  let out = `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃  ✦  *${smallCaps(CONFIG.botName)} · CATEGORIES*
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+  for (const cat of cats) {
+    const count = COMMAND_LIST[cat].length;
+    out += `  ${CAT_EMOJI[cat]} *${prefix}menu ${cat}* — ${smallCaps(CAT_NAME[cat])} (${count} cmds)\n`;
+  }
+  out += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⬅️  Type *${prefix}menu* to go *BACK TO MENU*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   return out;
 }
 
@@ -222,12 +298,26 @@ function cmd(name, aliases, desc, handler) {
   if (aliases) for (const a of aliases) COMMANDS[a.toLowerCase()] = { name, aliases, desc, handler };
 }
 
-cmd('menu', ['help'], 'Main menu', async (sock, msg) => {
+cmd('menu', ['help'], 'Main menu / category menu (.menu ai)', async (sock, msg, args) => {
+  // If a category is specified, show that category's menu
+  if (args[0]) {
+    const cat = args[0].toLowerCase();
+    if (COMMAND_LIST[cat]) {
+      const text = buildCategoryMenu(cat);
+      const img = getMenuImage();
+      if (img) await replyImage(sock, msg, img, text); else await reply(sock, msg, text);
+    } else {
+      await reply(sock, msg, `❌ Category not found. Type ${getSetting('prefix', CONFIG.prefix)}list to see categories.`);
+    }
+    return;
+  }
+  // No category → show main menu with image
   const text = buildMainMenu();
   const img = getMenuImage();
   if (img) await replyImage(sock, msg, img, text); else await reply(sock, msg, text);
 });
-cmd('all', ['menuall'], 'All commands', async (sock, msg) => { await reply(sock, msg, buildFullMenu()); });
+cmd('all', ['menuall'], 'All commands (single row layout)', async (sock, msg) => { await reply(sock, msg, buildFullMenu()); });
+cmd('list', ['cats', 'categories'], 'List all categories', async (sock, msg) => { await reply(sock, msg, buildCategoryList()); });
 cmd('ping', ['speed'], 'Ping', async (sock, msg) => {
   const s = process.hrtime(); const u = fmtUptime(process.uptime()*1000); const e = process.hrtime(s);
   const ms = (e[0]*1000 + e[1]/1e6).toFixed(2);
@@ -344,6 +434,441 @@ cmd('fact', [], 'Fact', async (sock, msg) => { const f=['Honey never spoils. 300
 cmd('whoami', [], 'Your info', async (sock, msg) => { const jid=msg.key.participant||msg.key.remoteJid; const num=String(jid).split('@')[0].split(':')[0]; await reply(sock,msg,`┏━━━━━✧ *WHO AM I* ✧━━━━━\n┃✧ Number: ${num}\n┃✧ Owner: ${isOwner(jid)?'✅':'❌'}\n┃✧ Bot: ${CONFIG.botName}\n┗━━━━━━━━━━━━━━━━━━━━━━━━`); });
 cmd('botinfo', ['info'], 'Bot info', async (sock, msg) => { await reply(sock,msg,`┏━━━━━✧ *BOT INFO* ✧━━━━━\n┃✧ Name: ${getSetting('botName',CONFIG.botName)}\n┃✧ Version: ${CONFIG.botVersion}\n┃✧ Owner: ${getSetting('ownerName',CONFIG.ownerName)}\n┃✧ Prefix: [ ${getSetting('prefix',CONFIG.prefix)} ]\n┃✧ Mode: ${getMode()}\n┃✧ Uptime: ${fmtUptime(process.uptime()*1000)}\n┃✧ RAM: ${(process.memoryUsage().rss/1024/1024).toFixed(0)} MB\n┗━━━━━━━━━━━━━━━━━━━━━━━━`); });
 cmd('calc', ['calculate'], 'Calculate', async (sock, msg, args) => { const e=args.join(' '); if(!e){await reply(sock,msg,'❌ Usage: calc <expression>');return;} try{const r=Function('"use strict";return ('+e.replace(/[^0-9+\-*/().%\s]/g,'')+')')();await reply(sock,msg,`🔢 ${e} = ${r}`);}catch{await reply(sock,msg,'❌ Invalid');} });
+
+// ─── DOWNLOAD COMMANDS ─────────────────────────────────────────────
+cmd('url', ['direct'], 'Direct URL download (reply to media)', async (sock, msg) => {
+  const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  if (!q) { await reply(sock, msg, '❌ Reply to a media message with .url'); return; }
+  // Extract the direct URL from the quoted message
+  let url = '';
+  if (q.imageMessage?.url) url = q.imageMessage.url;
+  else if (q.videoMessage?.url) url = q.videoMessage.url;
+  else if (q.audioMessage?.url) url = q.audioMessage.url;
+  else if (q.documentMessage?.url) url = q.documentMessage.url;
+  else if (q.stickerMessage?.url) url = q.stickerMessage.url;
+  if (!url) { await reply(sock, msg, '❌ Could not extract URL from the quoted message'); return; }
+  await reply(sock, msg, `🔗 *Direct URL:*\n\n${url}\n\n_Copy this URL to download the media directly._`);
+});
+
+cmd('apk', [], 'Download APK (search)', async (sock, msg, args) => {
+  const name = args.join(' ');
+  if (!name) { await reply(sock, msg, '❌ Usage: apk <app name>'); return; }
+  await reply(sock, msg, `📱 *APK Search: ${name}*\n\nhttps://apkpure.com/search?q=${encodeURIComponent(name)}\n\n_Download from APKPure — always verify apps before installing._`);
+});
+
+cmd('mediafire', ['mf'], 'MediaFire download link', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !url.includes('mediafire.com')) { await reply(sock, msg, '❌ Usage: mediafire <mediafire-url>'); return; }
+  await reply(sock, msg, `📥 *MediaFire Link:*\n\n${url}\n\n_Open the link in your browser to download._`);
+});
+
+cmd('tiktok', ['tt'], 'TikTok download', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !url.includes('tiktok.com')) { await reply(sock, msg, '❌ Usage: tiktok <tiktok-url>'); return; }
+  try {
+    const api = `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`;
+    const res = await fetch(api);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    if (data?.result?.video?.downloadUrl) {
+      const vRes = await fetch(data.result.video.downloadUrl);
+      const buf = Buffer.from(await vRes.arrayBuffer());
+      await sock.sendMessage(msg.key.remoteJid, { video: buf, caption: `🎵 *${data.result.author?.nickname || 'TikTok'}*\n\n${data.result.desc || ''}` }, { quoted: createFakeContact(msg) });
+    } else {
+      await reply(sock, msg, '❌ Could not fetch TikTok video');
+    }
+  } catch (e) { await reply(sock, msg, '❌ TikTok download failed: ' + e.message); }
+});
+
+cmd('facebook', ['fb'], 'Facebook video download', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !url.includes('facebook.com')) { await reply(sock, msg, '❌ Usage: facebook <fb-url>'); return; }
+  await reply(sock, msg, `📘 *Facebook Video:*\n\n${url}\n\n_Direct download requires a scraper API. Use an online FB downloader for now._`);
+});
+
+cmd('ig', ['instagram'], 'Instagram download', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !url.includes('instagram.com')) { await reply(sock, msg, '❌ Usage: ig <instagram-url>'); return; }
+  await reply(sock, msg, `📸 *Instagram Post:*\n\n${url}\n\n_Use an online IG downloader (e.g. snapinsta.app) for now._`);
+});
+
+cmd('twitter', ['x'], 'Twitter/X download', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !(url.includes('twitter.com') || url.includes('x.com'))) { await reply(sock, msg, '❌ Usage: twitter <tweet-url>'); return; }
+  await reply(sock, msg, `🐦 *Twitter/X Post:*\n\n${url}\n\n_Use an online Twitter downloader (e.g. ssstwitter.com) for now._`);
+});
+
+cmd('yt', ['youtube'], 'YouTube search', async (sock, msg, args) => {
+  const q = args.join(' ');
+  if (!q) { await reply(sock, msg, '❌ Usage: yt <search query>'); return; }
+  await reply(sock, msg, `🔍 *YouTube Search: ${q}*\n\nhttps://www.youtube.com/results?search_query=${encodeURIComponent(q)}`);
+});
+
+cmd('ytmp3', ['yta'], 'YouTube to MP3', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !url.includes('youtube.com') && !url.includes('youtu.be')) { await reply(sock, msg, '❌ Usage: ytmp3 <youtube-url>'); return; }
+  await reply(sock, msg, `🎵 *YouTube → MP3*\n\nURL: ${url}\n\n_Convert at ytmp3.cc or similar service._`);
+});
+
+cmd('ytmp4', ['ytv'], 'YouTube to MP4', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url || !url.includes('youtube.com') && !url.includes('youtu.be')) { await reply(sock, msg, '❌ Usage: ytmp4 <youtube-url>'); return; }
+  await reply(sock, msg, `🎬 *YouTube → MP4*\n\nURL: ${url}\n\n_Convert at ytmp4.cc or similar service._`);
+});
+
+cmd('play', ['playsong'], 'Play song (search)', async (sock, msg, args) => {
+  const q = args.join(' ');
+  if (!q) { await reply(sock, msg, '❌ Usage: play <song name>'); return; }
+  await reply(sock, msg, `🎵 *Searching: ${q}*\n\nhttps://www.youtube.com/results?search_query=${encodeURIComponent(q)}\n\n_Use .ytmp3 <url> to convert._`);
+});
+
+// ─── TOOLS ────────────────────────────────────────────────────────
+cmd('weather', ['wx'], 'Weather forecast', async (sock, msg, args) => {
+  const city = args.join(' ');
+  if (!city) { await reply(sock, msg, '❌ Usage: weather <city>'); return; }
+  try {
+    const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=3`);
+    const text = await res.text();
+    await reply(sock, msg, `🌤️ *Weather: ${city}*\n\n${text}`);
+  } catch (e) { await reply(sock, msg, '❌ Weather fetch failed'); }
+});
+
+cmd('lyrics', [], 'Song lyrics', async (sock, msg, args) => {
+  const q = args.join(' ');
+  if (!q) { await reply(sock, msg, '❌ Usage: lyrics <song name>'); return; }
+  await reply(sock, msg, `🎵 *Lyrics for: ${q}*\n\nhttps://www.google.com/search?q=${encodeURIComponent(q + ' lyrics')}\n\n_Search Google for the full lyrics._`);
+});
+
+cmd('wiki', ['wikipedia'], 'Wikipedia search', async (sock, msg, args) => {
+  const q = args.join(' ');
+  if (!q) { await reply(sock, msg, '❌ Usage: wiki <query>'); return; }
+  try {
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error('Not found');
+    const data = await res.json();
+    await reply(sock, msg, `📚 *${data.title}*\n\n${data.extract}\n\n_Source: Wikipedia_`);
+  } catch (e) { await reply(sock, msg, '❌ Wikipedia article not found'); }
+});
+
+cmd('define', ['dictionary'], 'Define a word', async (sock, msg, args) => {
+  const word = args.join(' ');
+  if (!word) { await reply(sock, msg, '❌ Usage: define <word>'); return; }
+  try {
+    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+    if (!res.ok) throw new Error('Not found');
+    const data = await res.json();
+    const def = data[0]?.meanings?.[0]?.definitions?.[0];
+    if (def) await reply(sock, msg, `📖 *${word}*\n\n${def.definition}\n\n_Part of speech: ${data[0].meanings[0].partOfSpeech}_`);
+    else await reply(sock, msg, '❌ No definition found');
+  } catch (e) { await reply(sock, msg, '❌ Word not found in dictionary'); }
+});
+
+cmd('shorten', ['shorturl'], 'Shorten URL', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url) { await reply(sock, msg, '❌ Usage: shorten <url>'); return; }
+  try {
+    const res = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
+    const short = await res.text();
+    await reply(sock, msg, `🔗 *Shortened:*\n\n${short}`);
+  } catch (e) { await reply(sock, msg, '❌ URL shorten failed'); }
+});
+
+cmd('ss', ['screenshot'], 'Screenshot a URL', async (sock, msg, args) => {
+  const url = args[0];
+  if (!url) { await reply(sock, msg, '❌ Usage: ss <url>'); return; }
+  try {
+    const ssUrl = `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=true&embed=screenshot.url`;
+    const res = await fetch(ssUrl);
+    const data = await res.json();
+    if (data?.data?.screenshot?.url) {
+      const imgRes = await fetch(data.data.screenshot.url);
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      await replyImage(sock, msg, buf, `📸 Screenshot of ${url}`);
+    } else {
+      await reply(sock, msg, '❌ Could not screenshot that URL');
+    }
+  } catch (e) { await reply(sock, msg, '❌ Screenshot failed: ' + e.message); }
+});
+
+cmd('tts', ['speak'], 'Text to speech (reply to text)', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: tts <text>'); return; }
+  try {
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=en&client=tw-ob`;
+    const res = await fetch(url);
+    const buf = Buffer.from(await res.arrayBuffer());
+    await sock.sendMessage(msg.key.remoteJid, { audio: buf, mimetype: 'audio/mpeg' }, { quoted: createFakeContact(msg) });
+  } catch (e) { await reply(sock, msg, '❌ TTS failed: ' + e.message); }
+});
+
+cmd('carbon', ['codesnippet'], 'Carbon code snippet', async (sock, msg, args) => {
+  const code = args.join(' ');
+  if (!code) { await reply(sock, msg, '❌ Usage: carbon <code>'); return; }
+  try {
+    const url = `https://carbonnowsh.herokuapp.com/?code=${encodeURIComponent(code)}`;
+    await reply(sock, msg, `🎨 *Carbon snippet:*\n\n${url}\n\n_Open the link to see your code as an image._`);
+  } catch (e) { await reply(sock, msg, '❌ Carbon failed'); }
+});
+
+cmd('nulis', ['write'], 'Text to handwriting image', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: nulis <text>'); return; }
+  try {
+    const url = `https://api.zahwazein.xyz/entertainment/nulis?text=${encodeURIComponent(text)}&apikey=KEYS`;
+    await reply(sock, msg, `✍️ *Handwriting image:*\n\n_Text: ${text}_\n\n_Use an online text-to-handwriting tool for now._`);
+  } catch (e) { await reply(sock, msg, '❌ Nulis failed'); }
+});
+
+cmd('base64', ['b64'], 'Base64 encode/decode', async (sock, msg, args) => {
+  const mode = args[0]; const text = args.slice(1).join(' ');
+  if (!mode || !text || (mode !== 'enc' && mode !== 'dec')) { await reply(sock, msg, '❌ Usage: base64 enc <text> | base64 dec <base64>'); return; }
+  try {
+    const result = mode === 'enc' ? Buffer.from(text).toString('base64') : Buffer.from(text, 'base64').toString('utf8');
+    await reply(sock, msg, `🔐 *Base64 ${mode === 'enc' ? 'Encode' : 'Decode'}:*\n\n${result}`);
+  } catch (e) { await reply(sock, msg, '❌ Invalid base64'); }
+});
+
+cmd('uuid', ['guid'], 'Generate UUID', async (sock, msg) => {
+  const uuid = crypto.randomUUID();
+  await reply(sock, msg, `🆔 *UUID:*\n\n${uuid}`);
+});
+
+cmd('timestamp', ['ts'], 'Current Unix timestamp', async (sock, msg) => {
+  await reply(sock, msg, `⏰ *Unix Timestamp:*\n\n${Math.floor(Date.now() / 1000)}`);
+});
+
+cmd('hex', ['hexencode'], 'Text to hex', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: hex <text>'); return; }
+  const hex = Buffer.from(text).toString('hex');
+  await reply(sock, msg, `🔢 *Hex:*\n\n${hex}`);
+});
+
+cmd('binary', ['bin'], 'Text to binary', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: binary <text>'); return; }
+  const bin = text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join(' ');
+  await reply(sock, msg, `🔢 *Binary:*\n\n${bin}`);
+});
+
+cmd('reverse', ['rev'], 'Reverse text', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: reverse <text>'); return; }
+  await reply(sock, msg, `🔄 *Reversed:*\n\n${text.split('').reverse().join('')}`);
+});
+
+cmd('uppercase', ['upper'], 'To uppercase', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: uppercase <text>'); return; }
+  await reply(sock, msg, `🔡 *UPPERCASE:*\n\n${text.toUpperCase()}`);
+});
+
+cmd('lowercase', ['lower'], 'To lowercase', async (sock, msg, args) => {
+  const text = args.join(' ');
+  if (!text) { await reply(sock, msg, '❌ Usage: lowercase <text>'); return; }
+  await reply(sock, msg, `🔡 *lowercase:*\n\n${text.toLowerCase()}`);
+});
+
+// ─── GROUP EXTENSIONS ──────────────────────────────────────────────
+cmd('groupinfo', ['gpinfo'], 'Group info', async (sock, msg) => {
+  if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
+  try {
+    const md = await sock.groupMetadata(msg.key.remoteJid);
+    await reply(sock, msg, `┏━━━━━✧ *GROUP INFO* ✧━━━━━\n┃✧ Name: ${md.subject}\n┃✧ Members: ${md.participants.length}\n┃✧ Created: ${new Date(md.creation * 1000).toLocaleDateString()}\n┃✧ Owner: ${md.owner ? String(md.owner).split('@')[0] : 'Unknown'}\n┃✧ Desc: ${md.desc || 'No description'}\n┗━━━━━━━━━━━━━━━━━━━━━━━━`);
+  } catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+cmd('del', ['delete'], 'Delete message (reply to msg)', async (sock, msg) => {
+  const q = msg.message?.extendedTextMessage?.contextInfo;
+  if (!q?.quotedMessage) { await reply(sock, msg, '❌ Reply to a message to delete it'); return; }
+  try {
+    const key = { remoteJid: msg.key.remoteJid, id: q.stanzaId, fromMe: q.participant === sock.user.id, participant: q.participant };
+    await sock.sendMessage(msg.key.remoteJid, { delete: key });
+  } catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+cmd('revoke', ['revokegroup'], 'Revoke group invite link', async (sock, msg) => {
+  if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
+  try { await sock.groupRevokeInvite(msg.key.remoteJid); await reply(sock, msg, '✅ Group invite link revoked'); }
+  catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+cmd('setdesc', ['groupdesc'], 'Set group description', async (sock, msg, args) => {
+  if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
+  const desc = args.join(' '); if (!desc) { await reply(sock, msg, '❌ Usage: setdesc <text>'); return; }
+  try { await sock.groupUpdateDescription(msg.key.remoteJid, desc); await reply(sock, msg, '✅ Description updated'); }
+  catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+// ─── ADMIN EXTENSIONS ──────────────────────────────────────────────
+cmd('block', ['blk'], 'Block a user', async (sock, msg, args) => {
+  const m = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[];
+  if(!m.length&&args[0]) m.push(phoneToJid(args[0])); if(!m.length){await reply(sock,msg,'❌ Usage: block @user|number');return;}
+  try { for (const jid of m) await sock.updateBlockStatus(jid, 'block'); await reply(sock, msg, `✅ Blocked ${m.length} user(s)`); }
+  catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+cmd('unblock', ['unblk'], 'Unblock a user', async (sock, msg, args) => {
+  const m = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[];
+  if(!m.length&&args[0]) m.push(phoneToJid(args[0])); if(!m.length){await reply(sock,msg,'❌ Usage: unblock @user|number');return;}
+  try { for (const jid of m) await sock.updateBlockStatus(jid, 'unblock'); await reply(sock, msg, `✅ Unblocked ${m.length} user(s)`); }
+  catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+cmd('autostatusview', ['asv'], 'Toggle auto status view', async (sock, msg) => {
+  const cur = getSetting('autostatusview', 'off'); const next = cur === 'on' ? 'off' : 'on'; setSetting('autostatusview', next);
+  await reply(sock, msg, `✅ Auto status view is now *${next.toUpperCase()}*`);
+});
+
+// ─── INFO EXTENSIONS ────────────────────────────────────────────────
+cmd('server', ['hostinfo'], 'Server info', async (sock, msg) => {
+  const mem = process.memoryUsage();
+  const cpus = ['Single core', 'Dual core', 'Quad core'][Math.floor(Math.random() * 3)];
+  await reply(sock, msg, `┏━━━━━✧ *SERVER* ✧━━━━━\n┃✧ Platform: ${process.platform}\n┃✧ Node: ${process.version}\n┃✧ RAM: ${(mem.rss/1024/1024).toFixed(0)} MB\n┃✧ Uptime: ${fmtUptime(process.uptime()*1000)}\n┃✧ PID: ${process.pid}\n┗━━━━━━━━━━━━━━━━━━━━━━━━`);
+});
+
+cmd('stats', ['statistics'], 'Bot statistics', async (sock, msg) => {
+  const totalCmds = Object.values(COMMAND_LIST).reduce((a,b) => a + b.length, 0);
+  const mem = process.memoryUsage();
+  await reply(sock, msg, `┏━━━━━✧ *STATS* ✧━━━━━\n┃✧ Commands: ${totalCmds}\n┃✧ Categories: ${Object.keys(COMMAND_LIST).length}\n┃✧ Uptime: ${fmtUptime(process.uptime()*1000)}\n┃✧ RAM: ${(mem.rss/1024/1024).toFixed(0)} MB\n┃✧ CPU: ${process.cpuUsage().user/1000} ms\n┗━━━━━━━━━━━━━━━━━━━━━━━━`);
+});
+
+cmd('timezone', ['tz'], 'Show timezone', async (sock, msg) => {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const time = new Date().toLocaleString('en-US', { timeZone: tz });
+  await reply(sock, msg, `🌍 *Timezone:* ${tz}\n🕒 *Local time:* ${time}`);
+});
+
+// ─── LOGO MAKER ────────────────────────────────────────────────────
+for (const [name, style] of [['logo','Default'],['neon','Neon'],['glitch','Glitch'],['burn','Burn'],['crimson','Crimson'],['golden','Golden'],['ice','Ice'],['fire','Fire'],['water','Water'],['smoke','Smoke'],['bokeh','Bokeh'],['rainbow','Rainbow'],['sparkle','Sparkle']]) {
+  cmd(name, [], `${style} text logo`, async (sock, msg, args) => {
+    const text = args.join(' ');
+    if (!text) { await reply(sock, msg, `❌ Usage: ${name} <text>`); return; }
+    try {
+      const url = `https://api.zahwazein.xyz/ephoto/${name}?text=${encodeURIComponent(text)}&apikey=KEYS`;
+      // Fallback to a simpler text logo API
+      const fallbackUrl = `https://flamingtext.com/net-fu/proxy.php?image=${name}-logo&script=${name}-logo&text=${encodeURIComponent(text)}&_loc=rop&dynsym=0`;
+      const res = await fetch(fallbackUrl, { redirect: 'follow' });
+      if (res.ok && res.headers.get('content-type')?.startsWith('image/')) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        await replyImage(sock, msg, buf, `🎨 *${style} logo: ${text}*`);
+      } else {
+        await reply(sock, msg, `🎨 *${style} logo: ${text}*\n\nhttps://flamingtext.com/net-fu/proxy.php?image=${name}-logo&script=${name}-logo&text=${encodeURIComponent(text)}\n\n_Click the link to view your logo._`);
+      }
+    } catch (e) { await reply(sock, msg, `🎨 *${style} logo: ${text}*\n\n_Generate at flamingtext.com (style: ${name})_`); }
+  });
+}
+
+// ─── CONVERTER ─────────────────────────────────────────────────────
+cmd('toimg', ['toimage'], 'Sticker to image (reply to sticker)', async (sock, msg) => {
+  const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  if (!q?.stickerMessage) { await reply(sock, msg, '❌ Reply to a sticker with .toimg'); return; }
+  try {
+    const buf = await sock.downloadMediaMessage({ key: msg.key, message: q });
+    await replyImage(sock, msg, buf, '🖼️ Converted to image');
+  } catch (e) { await reply(sock, msg, '❌ ' + e.message); }
+});
+
+cmd('emojimix', ['emix'], 'Mix two emojis', async (sock, msg, args) => {
+  const emojis = args.join(' ');
+  if (!emojis || emojis.length < 2) { await reply(sock, msg, '❌ Usage: emojimix <emoji1><emoji2>'); return; }
+  try {
+    const e1 = encodeURIComponent(emojis[0]); const e2 = encodeURIComponent(emojis[1]);
+    const url = `https://tenor.googleapis.com/v2/featured?key=AIzaSyAyimkwY5Z4czYqVrV0lN3VHx5V2vB2xV0&contentfilter=high&media_filter=png_transparent&component=proactive&collection=emoji_kitchen_v5&q=${e1}_${e2}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data?.results?.[0]?.url) {
+      const imgRes = await fetch(data.results[0].url);
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      await replyImage(sock, msg, buf, `🎨 ${emojis[0]} + ${emojis[1]}`);
+    } else { await reply(sock, msg, '❌ Could not mix those emojis'); }
+  } catch (e) { await reply(sock, msg, '❌ Emoji mix failed'); }
+});
+
+// ─── GAMES ─────────────────────────────────────────────────────────
+cmd('riddle', [], 'Random riddle', async (sock, msg) => {
+  const riddles = ['I have keys but no locks. I have space but no room. You can enter but can\'t go outside. What am I? (Keyboard)', 'What has hands but can\'t clap? (Clock)', 'What has a face and two hands but no arms or legs? (Clock)', 'I speak without a mouth and hear without ears. I have no body but come alive with wind. (Echo)'];
+  await reply(sock, msg, `🧩 *Riddle:*\n\n${riddles[Math.floor(Math.random() * riddles.length)]}`);
+});
+
+cmd('trivia', [], 'Random trivia', async (sock, msg) => {
+  const trivia = ['The shortest war in history was between Britain and Zanzibar in 1896 — it lasted 38 minutes.', 'A group of flamingos is called a "flamboyance."', 'The human nose can detect over 1 trillion smells.', 'Honey is the only food that does not spoil.', 'A group of crows is called a "murder."'];
+  await reply(sock, msg, `📚 *Trivia:*\n\n${trivia[Math.floor(Math.random() * trivia.length)]}`);
+});
+
+cmd('mathgame', ['math'], 'Math game', async (sock, msg) => {
+  const a = Math.floor(Math.random() * 20) + 1; const b = Math.floor(Math.random() * 20) + 1;
+  const ops = ['+', '-', '*']; const op = ops[Math.floor(Math.random() * 3)];
+  const answer = op === '+' ? a + b : op === '-' ? a - b : a * b;
+  await reply(sock, msg, `🧮 *Math Game:*\n\nWhat is ${a} ${op} ${b}?\n\n_Reply with the answer!_`);
+});
+
+// ─── FUN EXTENSIONS ────────────────────────────────────────────────
+cmd('ship', [], 'Ship two users', async (sock, msg, args) => {
+  const m = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[];
+  if (m.length < 2) { await reply(sock, msg, '❌ Usage: ship @user1 @user2'); return; }
+  const pct = Math.floor(Math.random() * 100) + 1;
+  const bar = '❤️'.repeat(Math.round(pct/10)) + '🤍'.repeat(10 - Math.round(pct/10));
+  await reply(sock, msg, `💕 *Ship: ${String(m[0]).split('@')[0]} × ${String(m[1]).split('@')[0]}*\n\n${bar}\n${pct}% compatible!`);
+});
+
+cmd('horny', [], 'How horny?', async (sock, msg) => {
+  const pct = Math.floor(Math.random() * 100);
+  await reply(sock, msg, `horniness meter:\n\n${'🔥'.repeat(Math.round(pct/10))}\n${pct}%`);
+});
+
+cmd('gay', [], 'How gay?', async (sock, msg) => {
+  const pct = Math.floor(Math.random() * 100);
+  await reply(sock, msg, `🏳️‍🌈 gay meter:\n\n${'🌈'.repeat(Math.round(pct/10))}\n${pct}%`);
+});
+
+cmd('smart', [], 'How smart?', async (sock, msg) => {
+  const pct = Math.floor(Math.random() * 100);
+  await reply(sock, msg, `🧠 smartness meter:\n\n${'🧠'.repeat(Math.round(pct/10))}\n${pct}%`);
+});
+
+cmd('character', ['char'], 'Random character trait', async (sock, msg) => {
+  const traits = ['Kind 💚', 'Brave 🦁', 'Wise 🦉', 'Creative 🎨', 'Loyal 🤝', 'Funny 😂', 'Calm 🧘', 'Ambitious 🚀'];
+  await reply(sock, msg, `🎭 *Your character: ${traits[Math.floor(Math.random() * traits.length)]}*`);
+});
+
+cmd('slots', ['slot'], 'Slot machine', async (sock, msg) => {
+  const s = ['🍒', '🍋', '🍊', '🍇', '7️⃣', '💎'];
+  const r1 = s[Math.floor(Math.random()*s.length)], r2 = s[Math.floor(Math.random()*s.length)], r3 = s[Math.floor(Math.random()*s.length)];
+  const win = r1 === r2 && r2 === r3;
+  await reply(sock, msg, `🎰 *SLOTS*\n\n${r1} | ${r2} | ${r3}\n\n${win ? '🎉 JACKPOT! You won!' : '❌ No match. Try again!'}`);
+});
+
+cmd('guess', ['guessnum'], 'Guess the number game', async (sock, msg, args) => {
+  const num = Math.floor(Math.random() * 10) + 1;
+  const guess = parseInt(args[0]);
+  if (!guess) { await reply(sock, msg, '🎲 Guess a number 1-10. Usage: guess <number>'); return; }
+  await reply(sock, msg, guess === num ? `🎉 Correct! The number was ${num}.` : `❌ Wrong! The number was ${num}. You guessed ${guess}.`);
+});
+
+// ─── AI EXTENSIONS ─────────────────────────────────────────────────
+cmd('summarize', ['sum'], 'Summarize text', async (sock, msg, args) => {
+  const text = args.join(' '); if (!text) { await reply(sock, msg, '❌ Usage: summarize <text>'); return; }
+  try { await sock.sendPresenceUpdate('composing', msg.key.remoteJid); const r = await fetch(`https://api.safone.dev/api/ai?query=Summarize this: ${encodeURIComponent(text)}`); const d = await r.json(); await reply(sock, msg, `📝 *Summary:*\n\n${d.answer||d.message||'Failed'}`); }
+  catch (e) { await reply(sock, msg, '❌ Summarize failed'); }
+});
+
+cmd('explain', ['explaincode'], 'Explain code/text', async (sock, msg, args) => {
+  const text = args.join(' '); if (!text) { await reply(sock, msg, '❌ Usage: explain <text>'); return; }
+  try { await sock.sendPresenceUpdate('composing', msg.key.remoteJid); const r = await fetch(`https://api.safone.dev/api/ai?query=Explain this: ${encodeURIComponent(text)}`); const d = await r.json(); await reply(sock, msg, `💡 *Explanation:*\n\n${d.answer||d.message||'Failed'}`); }
+  catch (e) { await reply(sock, msg, '❌ Explain failed'); }
+});
+
+cmd('flirt', [], 'AI flirt', async (sock, msg, args) => {
+  const target = args.join(' ') || 'you';
+  const lines = ['Are you a magician? Because whenever I look at you, everyone else disappears ✨', 'Do you have a map? I keep getting lost in your eyes 🗺️', 'Are you WiFi? Because I\'m feeling a connection 📶', 'Is your name Google? Because you\'ve got everything I\'ve been searching for 🔍'];
+  await reply(sock, msg, `😏 *Flirt for ${target}:*\n\n${lines[Math.floor(Math.random() * lines.length)]}`);
+});
+
+cmd('rizz', [], 'Rizz line', async (sock, msg) => {
+  const lines = ['Are you a parking ticket? Because you\'ve got FINE written all over you 🎫', 'I\'m not a photographer, but I can picture us together 📸', 'Do you believe in love at first sight, or should I walk by again? 🚶', 'Are you French? Because Eiffel for you 🗼'];
+  await reply(sock, msg, `😎 *Rizz:*\n\n${lines[Math.floor(Math.random() * lines.length)]}`);
+});
 
 // ─── Message handler ───────────────────────────────────────────────
 function extractText(msg) { if(msg.message?.conversation)return msg.message.conversation; if(msg.message?.extendedTextMessage?.text)return msg.message.extendedTextMessage.text; if(msg.message?.imageMessage?.caption)return msg.message.imageMessage.caption; if(msg.message?.videoMessage?.caption)return msg.message.videoMessage.caption; return ''; }
