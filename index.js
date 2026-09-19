@@ -1033,8 +1033,9 @@ async function startPairing(phone) {
         await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Bot is starting…\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands\n🟢 Support: ${CONFIG.supportUrl}` });
         console.log(`[PAIR ${webId}] ✓ Owner messages sent`);
       } catch(e) { console.log(`[PAIR ${webId}] ⚠ Messages: ${e.message}`); }
-      // Logout the pairing socket
-      try { await pairSock.logout(); } catch{}
+      // ★ DON'T logout — that revokes the WhatsApp link!
+      // Just end the WS (close without logout signal) so the link stays active.
+      try { await pairSock.end(new Error('pairing-complete')); } catch{}
       // Move creds to a permanent folder for this user, then start their bot
       const userAuthFolder = path.join(CONFIG.dataDir, 'auth', phone);
       fs.mkdirSync(userAuthFolder, { recursive: true });
@@ -1042,8 +1043,8 @@ async function startPairing(phone) {
         fs.copyFileSync(path.join(sessionFolder, f), path.join(userAuthFolder, f));
       }
       try { fs.rmSync(sessionFolder, { recursive: true, force: true }); } catch{}
-      // Start the bot for this user
-      setTimeout(() => startUserBot(phone, userAuthFolder), 2000);
+      // Start the bot for this user (5s delay so WhatsApp fully registers the link)
+      setTimeout(() => startUserBot(phone, userAuthFolder), 5000);
     }
     if (connection === 'close') {
       if (entry.status === 'linked') return;
@@ -1061,8 +1062,8 @@ async function startPairing(phone) {
               fs.mkdirSync(userAuthFolder, { recursive: true });
               for (const f of fs.readdirSync(sessionFolder)) fs.copyFileSync(path.join(sessionFolder, f), path.join(userAuthFolder, f));
               try { fs.rmSync(sessionFolder, { recursive: true, force: true }); } catch{}
-              try { s.logout(); } catch{}
-              setTimeout(() => startUserBot(phone, userAuthFolder), 2000);
+              try { s.end(new Error('pairing-complete')); } catch{}
+              setTimeout(() => startUserBot(phone, userAuthFolder), 5000);
             }
           });
         } catch(e) { console.error(`[PAIR ${webId}] Reconnect failed: ${e.message}`); }
