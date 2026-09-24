@@ -1018,8 +1018,9 @@ async function handleMessage(sock, msg) {
   const senderNum = String(senderJid).split('@')[0].split(':')[0];
   const isGroup = msg.key.remoteJid.endsWith('@g.us');
   console.log(`[MSG] ${isGroup?'GROUP':'DM'} from ${senderNum}: ".${cmdName}"`);
-  // ★ PRIVATE MODE — only owner (sudo) can use commands
-  if (!isOwner(senderJid)) {
+  // ★ In DM: always allow (you can only DM your own bot account)
+  // ★ In GROUP: check if sender is the paired user (sudo)
+  if (isGroup && !isOwner(senderJid)) {
     await reply(sock, msg, '> *only sudo access🔐*');
     return;
   }
