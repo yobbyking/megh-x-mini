@@ -105,14 +105,39 @@ function printConnected(o){const pad=(s,n)=>String(s).padEnd(n).slice(0,n);conso
 const SC = {a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ꜰ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'s',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ'};
 const smallCaps = s => String(s).split('').map(c => SC[c.toLowerCase()] || c).join('');
 
-// ─── createFakeContact ─────────────────────────────────────────────
-function createFakeContact(msg) {
+// ─── createFakeContact (with user photo) ───────────────────────────
+// Replies are quoted to a contact card showing the SENDER's info + photo
+// (not the bot's), so it looks like the bot is replying to the user's contact.
+async function createFakeContact(msg) {
   const botName = getSetting('botName', CONFIG.botName);
   const participantId = (msg && (msg.key.participant || msg.key.remoteJid)) || '0';
   const cleanId = String(participantId).split(':')[0].split('@')[0] || '0';
+  const senderName = msg?.pushName || cleanId;
+
+  // Try to get the sender's profile picture
+  let ppUrl = null;
+  try {
+    ppUrl = await sock?.profilePictureUrl?.(participantId, 'image');
+  } catch {}
+
+  const vcard = `BEGIN:VCARD\nVERSION:3.0\nN:${senderName};;;\nFN:${senderName}\nitem1.TEL;waid=${cleanId}:${cleanId}\nitem1.X-ABLabel:Phone\nPHOTO:${ppUrl || ''}\nEND:VCARD`;
+
   return {
     key: { participants: '0@s.whatsapp.net', remoteJid: '0@s.whatsapp.net', fromMe: false, id: 'MEGHXMINI' + Math.random().toString(36).substring(2,12).toUpperCase() },
-    message: { contactMessage: { displayName: botName, vcard: `BEGIN:VCARD\nVERSION:3.0\nN:Sy;Bot;;;\nFN:${botName}\nitem1.TEL;waid=${cleanId}:${cleanId}\nitem1.X-ABLabel:Phone\nEND:VCARD` } },
+    message: { contactMessage: { displayName: senderName, vcard } },
+    participant: '0@s.whatsapp.net'
+  };
+}
+
+// Sync wrapper for places where we can't await (command handlers etc)
+function createFakeContactSync(msg) {
+  const botName = getSetting('botName', CONFIG.botName);
+  const participantId = (msg && (msg.key.participant || msg.key.remoteJid)) || '0';
+  const cleanId = String(participantId).split(':')[0].split('@')[0] || '0';
+  const senderName = msg?.pushName || cleanId;
+  return {
+    key: { participants: '0@s.whatsapp.net', remoteJid: '0@s.whatsapp.net', fromMe: false, id: 'MEGHXMINI' + Math.random().toString(36).substring(2,12).toUpperCase() },
+    message: { contactMessage: { displayName: senderName, vcard: `BEGIN:VCARD\nVERSION:3.0\nN:${senderName};;;\nFN:${senderName}\nitem1.TEL;waid=${cleanId}:${cleanId}\nitem1.X-ABLabel:Phone\nEND:VCARD` } },
     participant: '0@s.whatsapp.net'
   };
 }
@@ -136,8 +161,14 @@ function getMode() { return getSetting('mode', CONFIG.mode); }
 function fmtUptime(ms) { const s=Math.floor(ms/1000); const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); const p=[]; if(d)p.push(d+'d'); if(h)p.push(h+'h'); if(m)p.push(m+'m'); p.push((s%60)+'s'); return p.join(' '); }
 function phoneToJid(phone) { let p=String(phone).replace(/\D/g,''); if(p.startsWith('00'))p=p.slice(2); return p+'@s.whatsapp.net'; }
 function normalizePhone(input) { if(!input) return null; let p=String(input).replace(/[^\d]/g,''); if(!p) return null; if(p.length>10&&p.startsWith('0'))p=p.slice(1); if(!/^\d{8,15}$/.test(p)) return null; return p; }
-async function reply(sock, msg, text, opts={}) { return sock.sendMessage(msg.key.remoteJid, { text, ...opts }, { quoted: createFakeContact(msg) }); }
-async function replyImage(sock, msg, img, cap, opts={}) { return sock.sendMessage(msg.key.remoteJid, { image: img, caption: cap, ...opts }, { quoted: createFakeContact(msg) }); }
+async function reply(sock, msg, text, opts={}) {
+  const contact = await createFakeContact(msg);
+  return sock.sendMessage(msg.key.remoteJid, { text, ...opts }, { quoted: contact });
+}
+async function replyImage(sock, msg, img, cap, opts={}) {
+  const contact = await createFakeContact(msg);
+  return sock.sendMessage(msg.key.remoteJid, { image: img, caption: cap, ...opts }, { quoted: contact });
+}
 
 // ─── Menu image ────────────────────────────────────────────────────
 async function downloadMenuImage() {
@@ -199,20 +230,23 @@ function buildMainMenu() {
   const ramPct = Math.min(100, Math.round((mem.rss / (1024*1024*512)) * 100));
   const ramBar = '█'.repeat(Math.round(ramPct/10)) + '░'.repeat(10 - Math.round(ramPct/10));
   const totalCmds = Object.values(COMMAND_LIST).reduce((a,b) => a + b.length, 0);
-  return `┏▣ ◈ *${CONFIG.botName.replace(/\s+/g,'_').toUpperCase()}* ◈
-┃ *ᴏᴡɴᴇʀ* : ${ownerName}
-┃ *ᴘʀᴇғɪx* : [ ${prefix} ]
-┃ *ʜᴏsᴛ* : Render
-┃ *ᴘʟᴜɢɪɴs* : ${totalCmds}
-┃ *ᴍᴏᴅᴇ* : ${mode === 'private' ? 'Private' : 'Public'}
-┃ *ᴠᴇʀsɪᴏɴ* : ${CONFIG.botVersion}
-┃ *sᴘᴇᴇᴅ* : ${speedMs} ms
-┃ *ᴜsᴀɢᴇ* : ${memMB} MB
-┃ *ʀᴀᴍ* : [${ramBar}] ${ramPct}%
-┃ *ᴜᴘᴛɪᴍᴇ* : ${uptime}
-┗▣
+  return `╭━◈ ${smallCaps(CONFIG.botName)} ◈━╮
+│  ${smallCaps('Owner')}  : ${ownerName}
+│  ${smallCaps('Prefix')} : [ ${prefix} ]
+│  ${smallCaps('Host')}   : Render
+│  ${smallCaps('Plugins')}: ${totalCmds}
+│  ${smallCaps('Mode')}   : ${mode === 'private' ? 'Private 🔐' : 'Public'}
+│  ${smallCaps('Version')}: ${CONFIG.botVersion}
+│  ${smallCaps('Speed')}  : ${speedMs} ms
+│  ${smallCaps('Usage')}  : ${memMB} MB
+│  ${smallCaps('RAM')}    : [${ramBar}] ${ramPct}%
+│  ${smallCaps('Uptime')} : ${uptime}
+╰━━━━━━━━━━━━━━━━━╯
 
-_*Type ${prefix}all to see all commands*_`;
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+📝 ${smallCaps('Type')} ${prefix}all ${smallCaps('to see all commands')}
+🎨 ${smallCaps('Type')} ${prefix}list ${smallCaps('for categories')}
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`;
 }
 
 function buildFullMenu() {
@@ -414,7 +448,45 @@ cmd('getdp', ['pp','profilepic'], 'Get profile pic', async (sock, msg, args) => 
   try{const url=await sock.profilePictureUrl(jid,'image');const res=await fetch(url);const b=Buffer.from(await res.arrayBuffer());await replyImage(sock,msg,b,`📸 @${String(jid).split('@')[0]}`,{mentions:[jid]});}catch(e){await reply(sock,msg,'❌ Could not fetch DP (hidden).');}
 });
 cmd('qr', ['qrcode'], 'Generate QR', async (sock, msg, args) => { const t=args.join(' '); if(!t){await reply(sock,msg,'❌ Usage: qr <text>');return;} try{const u=`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(t)}`;const r=await fetch(u);const b=Buffer.from(await r.arrayBuffer());await replyImage(sock,msg,b,`QR: ${t}`);}catch(e){await reply(sock,msg,'❌ '+e.message);} });
-cmd('song', ['play'], 'Search song', async (sock, msg, args) => { const q=args.join(' '); if(!q){await reply(sock,msg,'❌ Usage: song <name>');return;} await reply(sock,msg,`🔍 "${q}"\n\nhttps://www.youtube.com/results?search_query=${encodeURIComponent(q)}`); });
+cmd('song', ['play', 'music'], 'Download full song', async (sock, msg, args) => {
+  const query = args.join(' ');
+  if (!query) { await reply(sock, msg, `❌ Usage: ${getSetting('prefix', CONFIG.prefix)}song <song name>\n\nExample: .song Blinding Lights`); return; }
+  try {
+    await sock.sendPresenceUpdate('composing', msg.key.remoteJid);
+    const waitMsg = await reply(sock, msg, `🎵 Searching for: "${query}"...\n⏳ Downloading — this may take 10-30 seconds`);
+    // Use a public YouTube audio API
+    const apiUrl = `https://api.safone.dev/api/ytdl?query=${encodeURIComponent(query)}&type=audio`;
+    const res = await fetch(apiUrl, { timeout: 60000 });
+    if (!res.ok) throw new Error('API error ' + res.status);
+    const data = await res.json();
+    if (!data?.result?.download?.audio) throw new Error('No audio URL found');
+    const audioUrl = data.result.download.audio;
+    const title = data.result.title || query;
+    const duration = data.result.duration || 'Unknown';
+    const thumbnail = data.result.thumbnail;
+    // Download the audio
+    const audioRes = await fetch(audioUrl, { timeout: 120000 });
+    if (!audioRes.ok) throw new Error('Audio download failed');
+    const audioBuf = Buffer.from(await audioRes.arrayBuffer());
+    try { await sock.deleteMessage(waitMsg.key.chat, waitMsg.key); } catch {}
+    // Send as audio document
+    await sock.sendMessage(msg.key.remoteJid, {
+      audio: audioBuf,
+      mimetype: 'audio/mpeg',
+      fileName: `${title}.mp3`,
+      caption: `🎵 *${title}*\n⏱️ Duration: ${duration}\n💾 Size: ${(audioBuf.length / 1024 / 1024).toFixed(1)} MB`
+    }, { quoted: await createFakeContact(msg) });
+    console.log(`  ✓ [SONG] Sent "${title}" (${(audioBuf.length / 1024 / 1024).toFixed(1)} MB)`);
+  } catch (e) {
+    // Fallback: search YouTube and send link
+    try {
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+      await reply(sock, msg, `🎵 *${query}*\n\n⚠️ Direct download failed: ${e.message}\n\n🔗 Search on YouTube:\n${searchUrl}\n\n_Use .ytmp3 <url> to convert._`);
+    } catch (e2) {
+      await reply(sock, msg, `❌ Song download failed: ${e.message}`);
+    }
+  }
+});
 cmd('tls', [], 'Text sticker', async (sock, msg, args) => { const t=args.join(' '); if(!t){await reply(sock,msg,'❌ Usage: tls <text>');return;} await reply(sock,msg,`💬 ${t}`); });
 
 // AI
@@ -884,9 +956,11 @@ async function handleMessage(sock, msg) {
   const senderNum = String(senderJid).split('@')[0].split(':')[0];
   const isGroup = msg.key.remoteJid.endsWith('@g.us');
   console.log(`[MSG] ${isGroup?'GROUP':'DM'} from ${senderNum}: ".${cmdName}"`);
-  // ★ Bot is for everyone — no owner-only gate by default.
-  // Owner check is only used for sensitive commands (kick, mode change, etc.)
-  // but regular commands work for ANYONE who messages the bot.
+  // ★ PRIVATE MODE — only owner (sudo) can use commands
+  if (!isOwner(senderJid)) {
+    await reply(sock, msg, '> *only sudo access🔐*');
+    return;
+  }
   try { await command.handler(sock, msg, args, { senderJid, senderNum, isGroup }); }
   catch(e) { console.error('  ✗ Command error:', e.message); try{await reply(sock,msg,'❌ '+e.message);}catch{} }
 }
@@ -905,6 +979,40 @@ async function handleChatbot(sock, msg) {
 async function handleCall(sock, calls) {
   if(getSetting('anticall','off')!=='on') return;
   for(const c of calls) { if(c.status==='offer') { try{await sock.rejectCall(c.id,c.from);await sock.sendMessage(c.from,{text:`🚫 Calls rejected. ${CONFIG.botName} is a bot.`},{quoted:createFakeContact({key:{participant:c.from,remoteJid:c.from}})});}catch{} } }
+}
+
+// ─── Message store (for anti-delete) ───────────────────────────────
+// Stores recent messages per user so deleted ones can be retrieved.
+const messageStore = new Map(); // phone → Map(messageId → { text, type, mediaBuffer })
+
+function storeMessage(msg, phone) {
+  if (!messageStore.has(phone)) messageStore.set(phone, new Map());
+  const store = messageStore.get(phone);
+  const id = msg.key.id;
+  let text = '';
+  let type = 'text';
+  let mediaBuffer = null;
+
+  if (msg.message?.conversation) text = msg.message.conversation;
+  else if (msg.message?.extendedTextMessage?.text) text = msg.message.extendedTextMessage.text;
+  else if (msg.message?.imageMessage?.caption) { text = msg.message.imageMessage.caption; type = 'image'; }
+  else if (msg.message?.videoMessage?.caption) { text = msg.message.videoMessage.caption; type = 'video'; }
+  else if (msg.message?.imageMessage) type = 'image';
+  else if (msg.message?.videoMessage) type = 'video';
+  else if (msg.message?.audioMessage) type = 'audio';
+  else if (msg.message?.stickerMessage) type = 'sticker';
+
+  store.set(id, { text, type, mediaBuffer, jid: msg.key.remoteJid, ts: Date.now() });
+  // Clean up old messages (keep last 200)
+  if (store.size > 200) {
+    const oldest = [...store.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+    if (oldest) store.delete(oldest[0]);
+  }
+}
+
+function getMessage(id, phone) {
+  if (!messageStore.has(phone)) return null;
+  return messageStore.get(phone).get(id) || null;
 }
 
 // ─── Baileys (MULTI-USER) ──────────────────────────────────────────
@@ -982,10 +1090,52 @@ async function startUserBot(phone, authFolder) {
 
   userSock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
+      // ★ Anti-delete: ALWAYS ON — store messages so we can retrieve deleted ones
+      try {
+        if (!msg.key.fromMe) {
+          storeMessage(msg, phone);
+        }
+      } catch {}
       try { await handleAutoPresence(userSock, msg); await handleMessage(userSock, msg); await handleChatbot(userSock, msg); }
       catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
     }
   });
+
+  // ★ Anti-delete: ALWAYS ON — when a message is deleted, retrieve + send to owner DM
+  userSock.ev.on('messages.update', async (updates) => {
+    for (const update of updates) {
+      try {
+        if (update.update?.message === null && update.key?.remoteJid) {
+          // Message was deleted — retrieve from store
+          const stored = getMessage(update.key.id, phone);
+          if (stored) {
+            const ownerJid = sock?.user?.id || (getSetting('ownerNumber', CONFIG.ownerNumber) + '@s.whatsapp.net');
+            const delMsg = `🚫 *ANTI-DELETE*\n\n` +
+              `*From:* ${String(update.key.remoteJid).split('@')[0]}\n` +
+              `*Deleted at:* ${new Date().toLocaleTimeString()}\n\n` +
+              `*Message:*\n${stored.text || '[media]'}\n\n` +
+              `_Anti-delete is always on — deleted messages are recovered._`;
+            // Forward the deleted message to the owner's DM
+            if (stored.type === 'image' && stored.mediaBuffer) {
+              await userSock.sendMessage(ownerJid, { image: stored.mediaBuffer, caption: delMsg });
+            } else if (stored.type === 'video' && stored.mediaBuffer) {
+              await userSock.sendMessage(ownerJid, { video: stored.mediaBuffer, caption: delMsg });
+            } else if (stored.type === 'audio' && stored.mediaBuffer) {
+              await userSock.sendMessage(ownerJid, { audio: stored.mediaBuffer, mimetype: 'audio/mpeg' });
+              await userSock.sendMessage(ownerJid, { text: delMsg });
+            } else if (stored.type === 'sticker' && stored.mediaBuffer) {
+              await userSock.sendMessage(ownerJid, { sticker: stored.mediaBuffer });
+              await userSock.sendMessage(ownerJid, { text: delMsg });
+            } else {
+              await userSock.sendMessage(ownerJid, { text: delMsg });
+            }
+            console.log(`  🔄 [BOT ${phone}] Anti-delete: recovered deleted message from ${update.key.remoteJid}`);
+          }
+        }
+      } catch (e) { console.error(`  ✗ Anti-delete error: ${e.message}`); }
+    }
+  });
+
   userSock.ev.on('call', async (calls) => { try{ await handleCall(userSock, calls); }catch{} });
   return userSock;
 }
