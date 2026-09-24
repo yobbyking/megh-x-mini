@@ -42,7 +42,7 @@ import makeWASocket, {
   Browsers,
   proto,
   downloadMediaMessage
-} from '@whiskeysockets/baileys';
+} from 'mrxd-baileys';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

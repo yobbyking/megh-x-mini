@@ -1,7 +1,7 @@
 {
   "name": "megh-x-mini",
-  "version": "1.0.0",
-  "description": "MEGH X-MINI — Self-contained mini WhatsApp bot with built-in pairing. Deploy on Render/Railway, pair via web, bot connects instantly.",
+  "version": "1.1.0",
+  "description": "MEGH X-MINI — Self-contained mini WhatsApp bot with built-in pairing. Uses mrxd-baileys for button support.",
   "main": "index.js",
   "type": "module",
   "engines": {
@@ -14,7 +14,7 @@
   "author": "yobbyking",
   "license": "MIT",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.0",
+    "mrxd-baileys": "github:mrxdking/mrxd-baileys",
     "better-sqlite3": "^11.3.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
