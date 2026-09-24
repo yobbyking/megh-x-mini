@@ -142,15 +142,28 @@ function createFakeContactSync(msg) {
   };
 }
 
-// ─── Owner check ───────────────────────────────────────────────────
+// ─── Owner check (multi-user aware) ────────────────────────────────
+// An owner is ANYONE who has paired their number with this bot.
+// Check: env owner number + ALL paired users in data/auth/<phone>/creds.json
 function isOwner(jid) {
   const num = String(jid).split(':')[0].split('@')[0];
+  // 1. Check env var owner
   if (num === getSetting('ownerNumber', CONFIG.ownerNumber)) return true;
+  // 2. Check userSessions map (currently connected users)
+  if (userSessions && userSessions.has(num)) return true;
+  // 3. Check ALL auth subfolders for matching creds.me.id
   try {
-    const credsPath = path.join(CONFIG.authDir, 'creds.json');
-    if (fs.existsSync(credsPath)) {
-      const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
-      if (creds.me?.id && String(creds.me.id).split(':')[0] === num) return true;
+    const authRoot = path.join(CONFIG.dataDir, 'auth');
+    if (fs.existsSync(authRoot)) {
+      for (const dir of fs.readdirSync(authRoot)) {
+        const credsPath = path.join(authRoot, dir, 'creds.json');
+        if (fs.existsSync(credsPath)) {
+          try {
+            const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+            if (creds.me?.id && String(creds.me.id).split(':')[0] === num) return true;
+          } catch {}
+        }
+      }
     }
   } catch {}
   return false;
@@ -398,8 +411,11 @@ for (const [name, label] of [['antidelete','Anti-delete'],['antilink','Anti-link
 }
 
 // Group
-cmd('kick', ['remove'], 'Kick from group', async (sock, msg, args) => {
+cmd('kick', ['remove'], 'Kick from group (admin only)', async (sock, msg, args) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
+  if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;}
   const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[];
   let targets=[];
   if(args[0]==='all'){try{const md=await sock.groupMetadata(msg.key.remoteJid);targets=md.participants.map(p=>p.id).filter(id=>!isOwner(id)&&id!==sock.user.id);}catch(e){await reply(sock,msg,'❌ '+e.message);return;}}
@@ -409,13 +425,19 @@ cmd('kick', ['remove'], 'Kick from group', async (sock, msg, args) => {
   if(!targets.length){await reply(sock,msg,'❌ No valid targets');return;}
   try{await sock.groupParticipantsUpdate(msg.key.remoteJid,targets,'remove');await reply(sock,msg,`✅ Kicked ${targets.length} member(s)`);}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
-cmd('promote', [], 'Promote', async (sock, msg, args) => {
+cmd('promote', [], 'Promote (admin only)', async (sock, msg, args) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
+  if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;}
   const m=msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[]; if(!m.length&&args[0])m.push(phoneToJid(args[0])); if(!m.length){await reply(sock,msg,'❌ Usage: promote @user');return;}
   try{await sock.groupParticipantsUpdate(msg.key.remoteJid,m,'promote');await reply(sock,msg,`✅ Promoted ${m.length} user(s)`);}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
-cmd('demote', [], 'Demote', async (sock, msg, args) => {
+cmd('demote', [], 'Demote (admin only)', async (sock, msg, args) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
+  if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;}
   const m=msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[]; if(!m.length&&args[0])m.push(phoneToJid(args[0])); if(!m.length){await reply(sock,msg,'❌ Usage: demote @user');return;}
   try{await sock.groupParticipantsUpdate(msg.key.remoteJid,m,'demote');await reply(sock,msg,`✅ Demoted ${m.length} user(s)`);}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
@@ -423,16 +445,18 @@ cmd('tagall', ['hidetag'], 'Tag all', async (sock, msg, args) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
   try{const md=await sock.groupMetadata(msg.key.remoteJid);const mentions=md.participants.map(p=>p.id);const text=args.join(' ')||'┏━━━━━✧ *TAG ALL* ✧━━━━━\n';await sock.sendMessage(msg.key.remoteJid,{text,mentions},{quoted:createFakeContact(msg)});}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
-cmd('tosgroup', ['groupstatus'], 'Set group status (reply to msg)', async (sock, msg) => {
+cmd('tosgroup', ['groupstatus'], 'Set group status (admin only, reply to msg)', async (sock, msg) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
   const q=msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; if(!q){await reply(sock,msg,'❌ Reply to a text/media to set as group status');return;}
   let t=''; if(q.conversation)t=q.conversation; else if(q.extendedTextMessage?.text)t=q.extendedTextMessage.text; else if(q.imageMessage?.caption)t=q.imageMessage.caption; else if(q.videoMessage?.caption)t=q.videoMessage.caption;
   if(!t){await reply(sock,msg,'❌ Could not extract text');return;}
   try{await sock.groupUpdateDescription(msg.key.remoteJid,t);await reply(sock,msg,'✅ Group status updated!');}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
-cmd('close', ['lockgroup'], 'Close group', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'announcement');await reply(sock,msg,'✅ Group closed — admin only');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
-cmd('open', ['opengroup'], 'Open group', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'not_announcement');await reply(sock,msg,'✅ Group opened — everyone');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
-cmd('setname', ['groupname'], 'Set group name', async (sock, msg, args) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const n=args.join(' '); if(!n){await reply(sock,msg,'❌ Usage: setname <name>');return;} try{await sock.groupUpdateSubject(msg.key.remoteJid,n);await reply(sock,msg,`✅ Name: ${n}`);}catch(e){await reply(sock,msg,'❌ '+e.message);} });
+cmd('close', ['lockgroup'], 'Close group (admin only)', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'announcement');await reply(sock,msg,'✅ Group closed — admin only');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
+cmd('open', ['opengroup'], 'Open group (admin only)', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'not_announcement');await reply(sock,msg,'✅ Group opened — everyone');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
+cmd('setname', ['groupname'], 'Set group name (admin only)', async (sock, msg, args) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;} const n=args.join(' '); if(!n){await reply(sock,msg,'❌ Usage: setname <name>');return;} try{await sock.groupUpdateSubject(msg.key.remoteJid,n);await reply(sock,msg,`✅ Name: ${n}`);}catch(e){await reply(sock,msg,'❌ '+e.message);} });
 
 // Media
 cmd('sticker', ['s'], 'Make sticker', async (sock, msg) => {
@@ -759,14 +783,20 @@ cmd('del', ['delete'], 'Delete message (reply to msg)', async (sock, msg) => {
   } catch (e) { await reply(sock, msg, '❌ ' + e.message); }
 });
 
-cmd('revoke', ['revokegroup'], 'Revoke group invite link', async (sock, msg) => {
+cmd('revoke', ['revokegroup'], 'Revoke group invite (admin only)', async (sock, msg) => {
   if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)) { await reply(sock, msg, '❌ Only group admins can use this command'); return; }
+  if (!await isBotAdmin(sock, msg.key.remoteJid)) { await reply(sock, msg, '❌ Make the bot an admin first'); return; }
   try { await sock.groupRevokeInvite(msg.key.remoteJid); await reply(sock, msg, '✅ Group invite link revoked'); }
   catch (e) { await reply(sock, msg, '❌ ' + e.message); }
 });
 
-cmd('setdesc', ['groupdesc'], 'Set group description', async (sock, msg, args) => {
+cmd('setdesc', ['groupdesc'], 'Set group description (admin only)', async (sock, msg, args) => {
   if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)) { await reply(sock, msg, '❌ Only group admins can use this command'); return; }
+  if (!await isBotAdmin(sock, msg.key.remoteJid)) { await reply(sock, msg, '❌ Make the bot an admin first'); return; }
   const desc = args.join(' '); if (!desc) { await reply(sock, msg, '❌ Usage: setdesc <text>'); return; }
   try { await sock.groupUpdateDescription(msg.key.remoteJid, desc); await reply(sock, msg, '✅ Description updated'); }
   catch (e) { await reply(sock, msg, '❌ ' + e.message); }
@@ -981,11 +1011,11 @@ async function handleCall(sock, calls) {
   for(const c of calls) { if(c.status==='offer') { try{await sock.rejectCall(c.id,c.from);await sock.sendMessage(c.from,{text:`🚫 Calls rejected. ${CONFIG.botName} is a bot.`},{quoted:createFakeContact({key:{participant:c.from,remoteJid:c.from}})});}catch{} } }
 }
 
-// ─── Message store (for anti-delete) ───────────────────────────────
-// Stores recent messages per user so deleted ones can be retrieved.
+// ─── Message store (for anti-delete + view-once unlock) ────────────
+// Stores recent messages per user so deleted/view-once ones can be retrieved.
 const messageStore = new Map(); // phone → Map(messageId → { text, type, mediaBuffer })
 
-function storeMessage(msg, phone) {
+async function storeMessage(msg, phone, sock) {
   if (!messageStore.has(phone)) messageStore.set(phone, new Map());
   const store = messageStore.get(phone);
   const id = msg.key.id;
@@ -1002,7 +1032,28 @@ function storeMessage(msg, phone) {
   else if (msg.message?.audioMessage) type = 'audio';
   else if (msg.message?.stickerMessage) type = 'sticker';
 
-  store.set(id, { text, type, mediaBuffer, jid: msg.key.remoteJid, ts: Date.now() });
+  // ★ View-once detection — download immediately so we can "unlock" it
+  const isViewOnce = msg.message?.imageMessage?.viewOnce || msg.message?.videoMessage?.viewOnce ||
+    msg.message?.viewOnceMessage?.message?.imageMessage || msg.message?.viewOnceMessage?.message?.videoMessage;
+
+  if (isViewOnce && sock) {
+    try {
+      mediaBuffer = await sock.downloadMediaMessage(msg);
+      // Change type from 'image'/'video' to unlocked
+      if (msg.message?.viewOnceMessage?.message?.imageMessage) type = 'image';
+      else if (msg.message?.viewOnceMessage?.message?.videoMessage) type = 'video';
+      console.log(`  🔓 [ANTIDELETE] Captured view-once ${type} for +${phone}`);
+    } catch (e) {
+      console.log(`  ⚠ [ANTIDELETE] Could not capture view-once media: ${e.message}`);
+    }
+  } else if ((type === 'image' || type === 'video' || type === 'audio' || type === 'sticker') && sock) {
+    // Also download regular media so we can recover it if deleted
+    try {
+      mediaBuffer = await sock.downloadMediaMessage(msg);
+    } catch {}
+  }
+
+  store.set(id, { text, type, mediaBuffer, jid: msg.key.remoteJid, sender: msg.key.participant || msg.key.remoteJid, ts: Date.now(), isViewOnce: !!isViewOnce });
   // Clean up old messages (keep last 200)
   if (store.size > 200) {
     const oldest = [...store.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
@@ -1013,6 +1064,23 @@ function storeMessage(msg, phone) {
 function getMessage(id, phone) {
   if (!messageStore.has(phone)) return null;
   return messageStore.get(phone).get(id) || null;
+}
+
+// ─── Group admin check ──────────────────────────────────────────────
+async function isGroupAdmin(sock, groupJid, userJid) {
+  try {
+    const metadata = await sock.groupMetadata(groupJid);
+    const participant = metadata.participants.find(p => p.id === userJid);
+    return participant?.admin === 'admin' || participant?.admin === 'superadmin';
+  } catch { return false; }
+}
+
+async function isBotAdmin(sock, groupJid) {
+  try {
+    const metadata = await sock.groupMetadata(groupJid);
+    const botParticipant = metadata.participants.find(p => p.id === sock.user.id);
+    return botParticipant?.admin === 'admin' || botParticipant?.admin === 'superadmin';
+  } catch { return false; }
 }
 
 // ─── Baileys (MULTI-USER) ──────────────────────────────────────────
@@ -1093,7 +1161,7 @@ async function startUserBot(phone, authFolder) {
       // ★ Anti-delete: ALWAYS ON — store messages so we can retrieve deleted ones
       try {
         if (!msg.key.fromMe) {
-          storeMessage(msg, phone);
+          await storeMessage(msg, phone, userSock);
         }
       } catch {}
       try { await handleAutoPresence(userSock, msg); await handleMessage(userSock, msg); await handleChatbot(userSock, msg); }
@@ -1109,13 +1177,20 @@ async function startUserBot(phone, authFolder) {
           // Message was deleted — retrieve from store
           const stored = getMessage(update.key.id, phone);
           if (stored) {
-            const ownerJid = sock?.user?.id || (getSetting('ownerNumber', CONFIG.ownerNumber) + '@s.whatsapp.net');
-            const delMsg = `🚫 *ANTI-DELETE*\n\n` +
-              `*From:* ${String(update.key.remoteJid).split('@')[0]}\n` +
-              `*Deleted at:* ${new Date().toLocaleTimeString()}\n\n` +
-              `*Message:*\n${stored.text || '[media]'}\n\n` +
+            const ownerJid = userSock.user?.id || (getSetting('ownerNumber', CONFIG.ownerNumber) + '@s.whatsapp.net');
+            const senderNum = String(stored.sender || update.key.remoteJid).split('@')[0].split(':')[0];
+            const isViewOnceMsg = stored.isViewOnce;
+            const header = isViewOnceMsg
+              ? `🔓 *ANTI-DELETE — VIEW ONCE UNLOCKED*\n\n`
+              : `🚫 *ANTI-DELETE*\n\n`;
+            const delMsg = header +
+              `*From:* ${senderNum}\n` +
+              `*Deleted at:* ${new Date().toLocaleTimeString()}\n` +
+              (isViewOnceMsg ? `*Type:* View-once ${stored.type} (unlocked 🔓)\n` : '') +
+              `\n*Message:*\n${stored.text || '[media]'}\n\n` +
               `_Anti-delete is always on — deleted messages are recovered._`;
             // Forward the deleted message to the owner's DM
+            // ★ For view-once: send WITHOUT viewOnce flag → "unlocked"
             if (stored.type === 'image' && stored.mediaBuffer) {
               await userSock.sendMessage(ownerJid, { image: stored.mediaBuffer, caption: delMsg });
             } else if (stored.type === 'video' && stored.mediaBuffer) {
@@ -1129,7 +1204,7 @@ async function startUserBot(phone, authFolder) {
             } else {
               await userSock.sendMessage(ownerJid, { text: delMsg });
             }
-            console.log(`  🔄 [BOT ${phone}] Anti-delete: recovered deleted message from ${update.key.remoteJid}`);
+            console.log(`  🔄 [BOT ${phone}] Anti-delete: recovered ${isViewOnceMsg ? 'view-once ' : ''}${stored.type} from ${update.key.remoteJid}`);
           }
         }
       } catch (e) { console.error(`  ✗ Anti-delete error: ${e.message}`); }
