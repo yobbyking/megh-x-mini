@@ -142,6 +142,9 @@ function createFakeContactSync(msg) {
   };
 }
 
+// ─── Global maps (declared early so isOwner can use them) ──────────
+const userSessions = new Map(); // phone → { sock, authFolder, connected, userInfo }
+
 // ─── Owner check (multi-user aware) ────────────────────────────────
 // An owner is ANYONE who has paired their number with this bot.
 // Check: env owner number + ALL paired users + connected sockets
@@ -1107,8 +1110,6 @@ async function isGroupAdmin(sock, groupJid, userJid) {
 // ─── Baileys (MULTI-USER) ──────────────────────────────────────────
 // Each paired user gets their own auth folder + socket, all running in
 // the same process. Anyone can pair → connect → use the bot.
-
-const userSessions = new Map(); // phone → { sock, authFolder, connected, userInfo }
 
 async function startUserBot(phone, authFolder) {
   // If already running, skip
