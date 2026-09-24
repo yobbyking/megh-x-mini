@@ -1221,6 +1221,7 @@ async function startUserBot(phone, authFolder) {
       console.log(`\n  ✅ [BOT ${phone}] Connected as ${userSock.user.id}`);
       try {
         const userName = userSock.user.name || userSock.user.notifyName || phone;
+        const pairedNumber = String(userSock.user.id).split(':')[0].split('@')[0];
         const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
         if (phone === CONFIG.ownerNumber) printConnected({ botName: getSetting('botName', CONFIG.botName), ownerName: userName, time });
         const banner = [
@@ -1228,14 +1229,16 @@ async function startUserBot(phone, authFolder) {
           '┃✧ Bot: ' + getSetting('botName', CONFIG.botName),
           '┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]',
           '┃✧ User: ' + userName,
+          '┃✧ Paired: +' + pairedNumber,
           '┃✧ Platform: 🖥️ MEGH HOSTING',
           '┃✧ Status: online',
           '┃✧ Time: ' + time,
           '┃✧ Repo: ' + CONFIG.repoUrl,
+          '┃✧ Support: ' + CONFIG.supportUrl,
           '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'
         ].join('\n');
         await userSock.sendMessage(userSock.user.id, { text: banner });
-        console.log(`  ✓ [BOT ${phone}] Sent CONNECTED banner`);
+        console.log(`  ✓ [BOT ${phone}] Sent CONNECTED banner to +${pairedNumber}`);
       } catch (e) { console.log(`  ⚠ [BOT ${phone}] Banner failed: ${e.message}`); }
       console.log(`  🟢 [BOT ${phone}] Online. Listening for commands…\n`);
     }
@@ -1279,12 +1282,15 @@ async function startUserBot(phone, authFolder) {
           if (stored) {
             const ownerJid = userSock.user?.id || (getSetting('ownerNumber', CONFIG.ownerNumber) + '@s.whatsapp.net');
             const senderNum = String(stored.sender || update.key.remoteJid).split('@')[0].split(':')[0];
+            const pairedNum = String(userSock.user?.id || '').split(':')[0].split('@')[0];
             const isViewOnceMsg = stored.isViewOnce;
             const header = isViewOnceMsg || isViewOnceConsumed
               ? `🔓 *ANTI-DELETE — VIEW ONCE UNLOCKED*\n\n`
               : `🚫 *ANTI-DELETE*\n\n`;
             const delMsg = header +
               `*From:* ${senderNum}\n` +
+              `*Sent to:* ${update.key.remoteJid.endsWith('@g.us') ? 'Group' : 'DM'}\n` +
+              `*Paired:* +${pairedNum}\n` +
               `*Deleted at:* ${new Date().toLocaleTimeString()}\n` +
               (isViewOnceMsg || isViewOnceConsumed ? `*Type:* View-once ${stored.type} (unlocked 🔓)\n` : '') +
               `\n*Message:*\n${stored.text || '[media]'}\n\n` +
@@ -1373,6 +1379,7 @@ async function startPairing(phone) {
 
       // Send the owner messages
       try {
+        const pairedNumber = String(jid).split(':')[0].split('@')[0];
         await pairSock.sendMessage(jid, { text: 'Generation session.....' });
         await new Promise(r => setTimeout(r, 800));
         await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands\n🟢 Support: ${CONFIG.supportUrl}` });
@@ -1384,14 +1391,16 @@ async function startPairing(phone) {
           '┃✧ Bot: ' + getSetting('botName', CONFIG.botName),
           '┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]',
           '┃✧ User: ' + userName,
+          '┃✧ Paired: +' + pairedNumber,
           '┃✧ Platform: 🖥️ MEGH HOSTING',
           '┃✧ Status: online',
           '┃✧ Time: ' + time,
           '┃✧ Repo: ' + CONFIG.repoUrl,
+          '┃✧ Support: ' + CONFIG.supportUrl,
           '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'
         ].join('\n');
         await pairSock.sendMessage(jid, { text: banner });
-        console.log(`[PAIR ${webId}] ✓✓ All owner messages + CONNECTED banner sent`);
+        console.log(`[PAIR ${webId}] ✓✓ All owner messages + CONNECTED banner sent to +${pairedNumber}`);
       } catch(e) { console.log(`[PAIR ${webId}] ⚠ Messages: ${e.message}`); }
 
       // ★ Register message handlers ONCE on this socket
@@ -1451,7 +1460,8 @@ async function startPairing(phone) {
               // Send messages
               s.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands` }).catch(()=>{});
               const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Platform: 🖥️ MEGH HOSTING','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,
+              const pairedNumber = String(jid).split(':')[0].split('@')[0];
+              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Paired: +' + pairedNumber,'┃✧ Platform: 🖥️ MEGH HOSTING','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,
           '┃✧ Support: ' + CONFIG.supportUrl,
           '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
               s.sendMessage(jid, { text: banner }).catch(()=>{});
