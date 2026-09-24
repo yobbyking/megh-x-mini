@@ -275,7 +275,7 @@ function buildMainMenu() {
   return `╭━◈ ${smallCaps(CONFIG.botName)} ◈━╮
 │  ${smallCaps('Owner')}  : ${ownerName}
 │  ${smallCaps('Prefix')} : [ ${prefix} ]
-│  ${smallCaps('Host')}   : Render
+│  ${smallCaps('Host')}   : MEGH HOSTING
 │  ${smallCaps('Plugins')}: ${totalCmds}
 │  ${smallCaps('Mode')}   : ${mode === 'private' ? 'Private 🔐' : 'Public'}
 │  ${smallCaps('Version')}: ${CONFIG.botVersion}
@@ -1152,7 +1152,7 @@ async function startUserBot(phone, authFolder) {
           '┃✧ Bot: ' + getSetting('botName', CONFIG.botName),
           '┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]',
           '┃✧ User: ' + userName,
-          '┃✧ Platform: 🖥️ Render',
+          '┃✧ Platform: 🖥️ MEGH HOSTING',
           '┃✧ Status: online',
           '┃✧ Time: ' + time,
           '┃✧ Repo: ' + CONFIG.repoUrl,
@@ -1305,7 +1305,7 @@ async function startPairing(phone) {
           '┃✧ Bot: ' + getSetting('botName', CONFIG.botName),
           '┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]',
           '┃✧ User: ' + userName,
-          '┃✧ Platform: 🖥️ Render',
+          '┃✧ Platform: 🖥️ MEGH HOSTING',
           '┃✧ Status: online',
           '┃✧ Time: ' + time,
           '┃✧ Repo: ' + CONFIG.repoUrl,
@@ -1372,7 +1372,7 @@ async function startPairing(phone) {
               // Send messages
               s.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands` }).catch(()=>{});
               const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Platform: 🖥️ Render','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,
+              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Platform: 🖥️ MEGH HOSTING','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,
           '┃✧ Support: ' + CONFIG.supportUrl,
           '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
               s.sendMessage(jid, { text: banner }).catch(()=>{});
