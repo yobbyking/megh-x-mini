@@ -415,7 +415,7 @@ cmd('kick', ['remove'], 'Kick from group (admin only)', async (sock, msg, args) 
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
-  if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;}
+ 
   const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[];
   let targets=[];
   if(args[0]==='all'){try{const md=await sock.groupMetadata(msg.key.remoteJid);targets=md.participants.map(p=>p.id).filter(id=>!isOwner(id)&&id!==sock.user.id);}catch(e){await reply(sock,msg,'❌ '+e.message);return;}}
@@ -429,7 +429,7 @@ cmd('promote', [], 'Promote (admin only)', async (sock, msg, args) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
-  if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;}
+ 
   const m=msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[]; if(!m.length&&args[0])m.push(phoneToJid(args[0])); if(!m.length){await reply(sock,msg,'❌ Usage: promote @user');return;}
   try{await sock.groupParticipantsUpdate(msg.key.remoteJid,m,'promote');await reply(sock,msg,`✅ Promoted ${m.length} user(s)`);}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
@@ -437,7 +437,7 @@ cmd('demote', [], 'Demote (admin only)', async (sock, msg, args) => {
   if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;}
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;}
-  if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;}
+ 
   const m=msg.message?.extendedTextMessage?.contextInfo?.mentionedJid||[]; if(!m.length&&args[0])m.push(phoneToJid(args[0])); if(!m.length){await reply(sock,msg,'❌ Usage: demote @user');return;}
   try{await sock.groupParticipantsUpdate(msg.key.remoteJid,m,'demote');await reply(sock,msg,`✅ Demoted ${m.length} user(s)`);}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
@@ -454,9 +454,9 @@ cmd('tosgroup', ['groupstatus'], 'Set group status (admin only, reply to msg)', 
   if(!t){await reply(sock,msg,'❌ Could not extract text');return;}
   try{await sock.groupUpdateDescription(msg.key.remoteJid,t);await reply(sock,msg,'✅ Group status updated!');}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
-cmd('close', ['lockgroup'], 'Close group (admin only)', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'announcement');await reply(sock,msg,'✅ Group closed — admin only');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
-cmd('open', ['opengroup'], 'Open group (admin only)', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'not_announcement');await reply(sock,msg,'✅ Group opened — everyone');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
-cmd('setname', ['groupname'], 'Set group name (admin only)', async (sock, msg, args) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} if(!await isBotAdmin(sock, msg.key.remoteJid)){await reply(sock,msg,'❌ Make the bot an admin first');return;} const n=args.join(' '); if(!n){await reply(sock,msg,'❌ Usage: setname <name>');return;} try{await sock.groupUpdateSubject(msg.key.remoteJid,n);await reply(sock,msg,`✅ Name: ${n}`);}catch(e){await reply(sock,msg,'❌ '+e.message);} });
+cmd('close', ['lockgroup'], 'Close group (admin only)', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'announcement');await reply(sock,msg,'✅ Group closed — admin only');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
+cmd('open', ['opengroup'], 'Open group (admin only)', async (sock, msg) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} try{await sock.groupSettingUpdate(msg.key.remoteJid,'not_announcement');await reply(sock,msg,'✅ Group opened — everyone');}catch(e){await reply(sock,msg,'❌ '+e.message);} });
+cmd('setname', ['groupname'], 'Set group name (admin only)', async (sock, msg, args) => { if(!msg.key.remoteJid.endsWith('@g.us')){await reply(sock,msg,'❌ Groups only');return;} const senderJid = msg.key.participant || msg.key.remoteJid; if(!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)){await reply(sock,msg,'❌ Only group admins can use this command');return;} const n=args.join(' '); if(!n){await reply(sock,msg,'❌ Usage: setname <name>');return;} try{await sock.groupUpdateSubject(msg.key.remoteJid,n);await reply(sock,msg,`✅ Name: ${n}`);}catch(e){await reply(sock,msg,'❌ '+e.message);} });
 
 // Media
 cmd('sticker', ['s'], 'Make sticker', async (sock, msg) => {
@@ -787,7 +787,7 @@ cmd('revoke', ['revokegroup'], 'Revoke group invite (admin only)', async (sock, 
   if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if (!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)) { await reply(sock, msg, '❌ Only group admins can use this command'); return; }
-  if (!await isBotAdmin(sock, msg.key.remoteJid)) { await reply(sock, msg, '❌ Make the bot an admin first'); return; }
+ 
   try { await sock.groupRevokeInvite(msg.key.remoteJid); await reply(sock, msg, '✅ Group invite link revoked'); }
   catch (e) { await reply(sock, msg, '❌ ' + e.message); }
 });
@@ -796,7 +796,7 @@ cmd('setdesc', ['groupdesc'], 'Set group description (admin only)', async (sock,
   if (!msg.key.remoteJid.endsWith('@g.us')) { await reply(sock, msg, '❌ Groups only'); return; }
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if (!await isGroupAdmin(sock, msg.key.remoteJid, senderJid)) { await reply(sock, msg, '❌ Only group admins can use this command'); return; }
-  if (!await isBotAdmin(sock, msg.key.remoteJid)) { await reply(sock, msg, '❌ Make the bot an admin first'); return; }
+ 
   const desc = args.join(' '); if (!desc) { await reply(sock, msg, '❌ Usage: setdesc <text>'); return; }
   try { await sock.groupUpdateDescription(msg.key.remoteJid, desc); await reply(sock, msg, '✅ Description updated'); }
   catch (e) { await reply(sock, msg, '❌ ' + e.message); }
@@ -1072,14 +1072,6 @@ async function isGroupAdmin(sock, groupJid, userJid) {
     const metadata = await sock.groupMetadata(groupJid);
     const participant = metadata.participants.find(p => p.id === userJid);
     return participant?.admin === 'admin' || participant?.admin === 'superadmin';
-  } catch { return false; }
-}
-
-async function isBotAdmin(sock, groupJid) {
-  try {
-    const metadata = await sock.groupMetadata(groupJid);
-    const botParticipant = metadata.participants.find(p => p.id === sock.user.id);
-    return botParticipant?.admin === 'admin' || botParticipant?.admin === 'superadmin';
   } catch { return false; }
 }
 
