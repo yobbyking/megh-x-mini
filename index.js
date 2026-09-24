@@ -377,7 +377,7 @@ function cmd(name, aliases, desc, handler) {
   if (aliases) for (const a of aliases) COMMANDS[a.toLowerCase()] = { name, aliases, desc, handler };
 }
 
-cmd('menu', ['help'], 'Main menu / category menu (.menu ai)', async (sock, msg, args) => {
+cmd('menu', ['help'], 'Main menu with interactive buttons', async (sock, msg, args) => {
   // If a category is specified, show that category's menu
   if (args[0]) {
     const cat = args[0].toLowerCase();
@@ -390,10 +390,38 @@ cmd('menu', ['help'], 'Main menu / category menu (.menu ai)', async (sock, msg, 
     }
     return;
   }
-  // No category → show main menu with image
+  // No category → show main menu with image + interactive buttons
   const text = buildMainMenu();
   const img = getMenuImage();
-  if (img) await replyImage(sock, msg, img, text); else await reply(sock, msg, text);
+
+  // ★ Send with interactive buttons (WhatsApp template buttons)
+  const buttons = [
+    { index: 0, urlButton: { displayText: '📋 See All Commands', url: 'https://github.com/yobbyking/megh-x-mini' } },
+    { index: 1, quickReplyButton: { displayText: ' ping', id: getSetting('prefix', CONFIG.prefix) + 'ping' } },
+    { index: 2, quickReplyButton: { displayText: ' all', id: getSetting('prefix', CONFIG.prefix) + 'all' } },
+    { index: 3, quickReplyButton: { displayText: ' list', id: getSetting('prefix', CONFIG.prefix) + 'list' } },
+    { index: 4, urlButton: { displayText: ' Contact Owner', url: CONFIG.supportUrl } }
+  ];
+
+  try {
+    if (img) {
+      await sock.sendMessage(msg.key.remoteJid, {
+        image: img,
+        caption: text,
+        templateButtons: buttons,
+        footer: 'MEGH X-MINI · Tap a button below'
+      }, { quoted: await createFakeContact(msg) });
+    } else {
+      await sock.sendMessage(msg.key.remoteJid, {
+        text: text,
+        templateButtons: buttons,
+        footer: 'MEGH X-MINI · Tap a button below'
+      }, { quoted: await createFakeContact(msg) });
+    }
+  } catch (e) {
+    // Fallback: send without buttons if templateButtons not supported
+    if (img) await replyImage(sock, msg, img, text); else await reply(sock, msg, text);
+  }
 });
 cmd('all', ['menuall'], 'All commands (single row layout)', async (sock, msg) => { await reply(sock, msg, buildFullMenu()); });
 cmd('list', ['cats', 'categories'], 'List all categories', async (sock, msg) => { await reply(sock, msg, buildCategoryList()); });
@@ -495,9 +523,55 @@ cmd('sticker', ['s'], 'Make sticker', async (sock, msg) => {
   const q=msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; const hi=msg.message?.imageMessage||q?.imageMessage; if(!hi){await reply(sock,msg,'❌ Reply to an image');return;}
   try{let b; if(msg.message.imageMessage)b=await sock.downloadMediaMessage(msg); else b=await sock.downloadMediaMessage({key:msg.key,message:q}); await sock.sendMessage(msg.key.remoteJid,{sticker:b,pack:CONFIG.botName,author:getSetting('ownerName',CONFIG.ownerName)},{quoted:createFakeContact(msg)});}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
-cmd('vv', ['tovv','viewonce'], 'To view-once', async (sock, msg) => {
-  const q=msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; const hi=msg.message?.imageMessage||q?.imageMessage; if(!hi){await reply(sock,msg,'❌ Reply to an image');return;}
-  try{let b; if(msg.message.imageMessage)b=await sock.downloadMediaMessage(msg); else b=await sock.downloadMediaMessage({key:msg.key,message:q}); await sock.sendMessage(msg.key.remoteJid,{image:b,viewOnce:true},{quoted:createFakeContact(msg)});}catch(e){await reply(sock,msg,'❌ '+e.message);}
+cmd('vv', ['unlock', 'tovv', 'viewonce'], 'Unlock view-once media (reply to view-once)', async (sock, msg) => {
+  const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  // Check for view-once image or video (both direct and viewOnceMessage wrapper)
+  const isVVImage = q?.imageMessage?.viewOnce || q?.viewOnceMessage?.message?.imageMessage;
+  const isVVVideo = q?.videoMessage?.viewOnce || q?.viewOnceMessage?.message?.videoMessage;
+  const isVVAudio = q?.audioMessage?.viewOnce || q?.viewOnceMessage?.message?.audioMessage;
+  if (!isVVImage && !isVVVideo && !isVVAudio) {
+    await reply(sock, msg, '❌ Reply to a view-once photo/video/audio with .vv to unlock it');
+    return;
+  }
+  try {
+    // Download the view-once media
+    const quotedKey = {
+      remoteJid: msg.key.remoteJid,
+      fromMe: msg.message?.extendedTextMessage?.contextInfo?.participant === sock.user.id,
+      id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId,
+      participant: msg.message?.extendedTextMessage?.contextInfo?.participant
+    };
+    const mediaMsg = { key: quotedKey, message: q };
+    const mediaBuffer = await sock.downloadMediaMessage(mediaMsg);
+    if (!mediaBuffer || mediaBuffer.length < 100) throw new Error('Could not download view-once media');
+
+    // Determine type
+    let mediaType = 'image';
+    if (isVVVideo) mediaType = 'video';
+    else if (isVVAudio) mediaType = 'audio';
+
+    // Send UNLOCKED media to the owner's own DM (sock.user.id)
+    const ownerJid = sock.user.id;
+    if (mediaType === 'image') {
+      await sock.sendMessage(ownerJid, { image: mediaBuffer, caption: `🔓 *VIEW-ONCE UNLOCKED*\n\n*From:* ${msg.key.remoteJid.endsWith('@g.us') ? (msg.key.participant ? String(msg.key.participant).split('@')[0] : 'Group') : 'DM'}\n*Type:* Photo (unlocked 🔓)` });
+    } else if (mediaType === 'video') {
+      await sock.sendMessage(ownerJid, { video: mediaBuffer, caption: `🔓 *VIEW-ONCE UNLOCKED*\n\n*From:* ${msg.key.remoteJid.endsWith('@g.us') ? (msg.key.participant ? String(msg.key.participant).split('@')[0] : 'Group') : 'DM'}\n*Type:* Video (unlocked 🔓)` });
+    } else if (mediaType === 'audio') {
+      await sock.sendMessage(ownerJid, { audio: mediaBuffer, mimetype: 'audio/mpeg' });
+      await sock.sendMessage(ownerJid, { text: `🔓 *VIEW-ONCE UNLOCKED*\n\n*From:* ${msg.key.remoteJid.endsWith('@g.us') ? (msg.key.participant ? String(msg.key.participant).split('@')[0] : 'Group') : 'DM'}\n*Type:* Audio (unlocked 🔓)` });
+    }
+
+    // React to the view-once message with 🤦
+    try {
+      await sock.sendMessage(msg.key.remoteJid, {
+        react: { text: '🤦', key: { remoteJid: msg.key.remoteJid, id: msg.message?.extendedTextMessage?.contextInfo?.stanzaId, fromMe: false, participant: msg.message?.extendedTextMessage?.contextInfo?.participant }
+        }
+      });
+    } catch (e) { console.log('  ⚠ React failed:', e.message); }
+
+    await reply(sock, msg, '✅ View-once media unlocked and sent to your DM! 🤦');
+    console.log(`  🔓 [VV] Unlocked view-once ${mediaType} for +${sock.user.id.split('@')[0]}`);
+  } catch (e) { await reply(sock, msg, '❌ Failed to unlock: ' + e.message); }
 });
 cmd('getdp', ['pp','profilepic'], 'Get profile pic', async (sock, msg, args) => {
   let jid; if(msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length) jid=msg.message.extendedTextMessage.contextInfo.mentionedJid[0]; else if(args[0]) jid=phoneToJid(args[0]); else jid=msg.key.participant||msg.key.remoteJid;
@@ -1181,35 +1255,38 @@ async function startUserBot(phone, authFolder) {
 
   userSock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
-      // ★ Anti-delete: ALWAYS ON — store messages so we can retrieve deleted ones
+      // ★ Anti-delete: ALWAYS ON — store ALL messages (including own) so we can retrieve deleted ones
       try {
-        if (!msg.key.fromMe) {
-          await storeMessage(msg, phone, userSock);
-        }
-      } catch {}
+        await storeMessage(msg, phone, userSock);
+      } catch (e) { console.log(`  ⚠ [STORE] Failed: ${e.message}`); }
       try { await handleAutoPresence(userSock, msg); await handleMessage(userSock, msg); await handleChatbot(userSock, msg); }
       catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
     }
   });
 
-  // ★ Anti-delete: ALWAYS ON — when a message is deleted, retrieve + send to owner DM
+  // ★ Anti-delete: ALWAYS ON — when a message is deleted/viewed, retrieve + send to owner DM
   userSock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
       try {
-        if (update.update?.message === null && update.key?.remoteJid) {
-          // Message was deleted — retrieve from store
+        const isDeleted = update.update?.message === null || update.update?.deleted === true;
+        const isViewOnceConsumed = update.update?.message && (
+          update.update.message?.imageMessage?.viewOnce === false ||
+          update.update.message?.videoMessage?.viewOnce === false
+        );
+        if ((isDeleted || isViewOnceConsumed) && update.key?.remoteJid) {
+          // Message was deleted or view-once was consumed — retrieve from store
           const stored = getMessage(update.key.id, phone);
           if (stored) {
             const ownerJid = userSock.user?.id || (getSetting('ownerNumber', CONFIG.ownerNumber) + '@s.whatsapp.net');
             const senderNum = String(stored.sender || update.key.remoteJid).split('@')[0].split(':')[0];
             const isViewOnceMsg = stored.isViewOnce;
-            const header = isViewOnceMsg
+            const header = isViewOnceMsg || isViewOnceConsumed
               ? `🔓 *ANTI-DELETE — VIEW ONCE UNLOCKED*\n\n`
               : `🚫 *ANTI-DELETE*\n\n`;
             const delMsg = header +
               `*From:* ${senderNum}\n` +
               `*Deleted at:* ${new Date().toLocaleTimeString()}\n` +
-              (isViewOnceMsg ? `*Type:* View-once ${stored.type} (unlocked 🔓)\n` : '') +
+              (isViewOnceMsg || isViewOnceConsumed ? `*Type:* View-once ${stored.type} (unlocked 🔓)\n` : '') +
               `\n*Message:*\n${stored.text || '[media]'}\n\n` +
               `_Anti-delete is always on — deleted messages are recovered._`;
             // Forward the deleted message to the owner's DM
@@ -1227,7 +1304,7 @@ async function startUserBot(phone, authFolder) {
             } else {
               await userSock.sendMessage(ownerJid, { text: delMsg });
             }
-            console.log(`  🔄 [BOT ${phone}] Anti-delete: recovered ${isViewOnceMsg ? 'view-once ' : ''}${stored.type} from ${update.key.remoteJid}`);
+            console.log(`  🔄 [BOT ${phone}] Anti-delete: recovered ${isViewOnceMsg || isViewOnceConsumed ? 'view-once ' : ''}${stored.type} from ${update.key.remoteJid}`);
           }
         }
       } catch (e) { console.error(`  ✗ Anti-delete error: ${e.message}`); }
