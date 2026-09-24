@@ -40,7 +40,8 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   Browsers,
-  proto
+  proto,
+  downloadMediaMessage
 } from '@whiskeysockets/baileys';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -390,36 +391,38 @@ cmd('menu', ['help'], 'Main menu with interactive buttons', async (sock, msg, ar
     }
     return;
   }
-  // No category → show main menu with image + interactive buttons
+  // No category -> show main menu with image + list message
   const text = buildMainMenu();
   const img = getMenuImage();
 
-  // ★ Send with interactive buttons (WhatsApp template buttons)
-  const buttons = [
-    { index: 0, urlButton: { displayText: '📋 See All Commands', url: 'https://github.com/yobbyking/megh-x-mini' } },
-    { index: 1, quickReplyButton: { displayText: ' ping', id: getSetting('prefix', CONFIG.prefix) + 'ping' } },
-    { index: 2, quickReplyButton: { displayText: ' all', id: getSetting('prefix', CONFIG.prefix) + 'all' } },
-    { index: 3, quickReplyButton: { displayText: ' list', id: getSetting('prefix', CONFIG.prefix) + 'list' } },
-    { index: 4, urlButton: { displayText: ' Contact Owner', url: CONFIG.supportUrl } }
-  ];
+  const listSections = [{
+    title: 'MEGH X-MINI Navigation',
+    rows: [
+      { title: 'All Commands', description: 'View all 130+ commands', id: getSetting('prefix', CONFIG.prefix) + 'all' },
+      { title: 'Ping', description: 'Check bot speed', id: getSetting('prefix', CONFIG.prefix) + 'ping' },
+      { title: 'Categories', description: 'Browse by category', id: getSetting('prefix', CONFIG.prefix) + 'list' },
+      { title: 'Contact Owner', description: 'Get owner WhatsApp link', id: getSetting('prefix', CONFIG.prefix) + 'owner' },
+    ]
+  }];
 
   try {
     if (img) {
       await sock.sendMessage(msg.key.remoteJid, {
         image: img,
-        caption: text,
-        templateButtons: buttons,
-        footer: 'MEGH X-MINI · Tap a button below'
+        caption: text
       }, { quoted: await createFakeContact(msg) });
     } else {
-      await sock.sendMessage(msg.key.remoteJid, {
-        text: text,
-        templateButtons: buttons,
-        footer: 'MEGH X-MINI · Tap a button below'
-      }, { quoted: await createFakeContact(msg) });
+      await reply(sock, msg, text);
     }
+    await sock.sendMessage(msg.key.remoteJid, {
+      text: 'Tap below to navigate:',
+      footer: 'Powered by MEGH HOSTING',
+      title: 'MEGH X-MINI',
+      buttonText: 'Menu',
+      sections: listSections
+    }, { quoted: await createFakeContact(msg) });
   } catch (e) {
-    // Fallback: send without buttons if templateButtons not supported
+    console.log('  List message failed, sending plain:', e.message);
     if (img) await replyImage(sock, msg, img, text); else await reply(sock, msg, text);
   }
 });
@@ -450,13 +453,13 @@ cmd('setownername', ['ownername'], 'Set owner name', async (sock, msg, args) => 
 cmd('setprofilepic', ['setpp'], 'Set profile pic (reply to photo)', async (sock, msg) => {
   const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; const hi = msg.message?.imageMessage || q?.imageMessage;
   if(!hi){await reply(sock,msg,'❌ Reply to a photo');return;}
-  try { let b; if(msg.message.imageMessage) b=await sock.downloadMediaMessage(msg); else b=await sock.downloadMediaMessage({key:msg.key,message:q}); await sock.updateProfilePicture(sock.user.id,b); await reply(sock,msg,'✅ Profile pic updated!'); }
+  try { let b; if(msg.message.imageMessage) b=await downloadMediaMessage(msg, 'buffer', {}, sock); else b=await downloadMediaMessage({key:msg.key,message:q}, 'buffer', {}, sock); await sock.updateProfilePicture(sock.user.id,b); await reply(sock,msg,'✅ Profile pic updated!'); }
   catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
 cmd('setmenuimage', ['menuimage'], 'Set menu image (reply to photo)', async (sock, msg) => {
   const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; const hi = msg.message?.imageMessage || q?.imageMessage;
   if(!hi){await reply(sock,msg,'❌ Reply to a photo');return;}
-  try { let b; if(msg.message.imageMessage) b=await sock.downloadMediaMessage(msg); else b=await sock.downloadMediaMessage({key:msg.key,message:q}); fs.writeFileSync(path.join(CONFIG.dataDir,'menu-image.png'),b); await reply(sock,msg,`✅ Menu image updated! (${(b.length/1024).toFixed(0)} KB)`); }
+  try { let b; if(msg.message.imageMessage) b=await downloadMediaMessage(msg, 'buffer', {}, sock); else b=await downloadMediaMessage({key:msg.key,message:q}, 'buffer', {}, sock); fs.writeFileSync(path.join(CONFIG.dataDir,'menu-image.png'),b); await reply(sock,msg,`✅ Menu image updated! (${(b.length/1024).toFixed(0)} KB)`); }
   catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
 cmd('setstatus', ['status'], 'Set status', async (sock, msg, args) => { const t=args.join(' '); if(!t){await reply(sock,msg,'❌ Usage: setstatus <text>');return;} try{await sock.updateProfileStatus(t);await reply(sock,msg,`✅ Status: ${t}`);}catch(e){await reply(sock,msg,'❌ '+e.message);} });
@@ -521,7 +524,7 @@ cmd('setname', ['groupname'], 'Set group name (admin only)', async (sock, msg, a
 // Media
 cmd('sticker', ['s'], 'Make sticker', async (sock, msg) => {
   const q=msg.message?.extendedTextMessage?.contextInfo?.quotedMessage; const hi=msg.message?.imageMessage||q?.imageMessage; if(!hi){await reply(sock,msg,'❌ Reply to an image');return;}
-  try{let b; if(msg.message.imageMessage)b=await sock.downloadMediaMessage(msg); else b=await sock.downloadMediaMessage({key:msg.key,message:q}); await sock.sendMessage(msg.key.remoteJid,{sticker:b,pack:CONFIG.botName,author:getSetting('ownerName',CONFIG.ownerName)},{quoted:createFakeContact(msg)});}catch(e){await reply(sock,msg,'❌ '+e.message);}
+  try{let b; if(msg.message.imageMessage)b=await downloadMediaMessage(msg, 'buffer', {}, sock); else b=await downloadMediaMessage({key:msg.key,message:q}, 'buffer', {}, sock); await sock.sendMessage(msg.key.remoteJid,{sticker:b,pack:CONFIG.botName,author:getSetting('ownerName',CONFIG.ownerName)},{quoted:createFakeContact(msg)});}catch(e){await reply(sock,msg,'❌ '+e.message);}
 });
 cmd('vv', ['unlock', 'tovv', 'viewonce'], 'Unlock view-once media (reply to view-once)', async (sock, msg) => {
   const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
@@ -542,7 +545,7 @@ cmd('vv', ['unlock', 'tovv', 'viewonce'], 'Unlock view-once media (reply to view
       participant: msg.message?.extendedTextMessage?.contextInfo?.participant
     };
     const mediaMsg = { key: quotedKey, message: q };
-    const mediaBuffer = await sock.downloadMediaMessage(mediaMsg);
+    const mediaBuffer = await downloadMediaMessage(mediaMsg, 'buffer', {}, sock);
     if (!mediaBuffer || mediaBuffer.length < 100) throw new Error('Could not download view-once media');
 
     // Determine type
@@ -972,7 +975,7 @@ cmd('toimg', ['toimage'], 'Sticker to image (reply to sticker)', async (sock, ms
   const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
   if (!q?.stickerMessage) { await reply(sock, msg, '❌ Reply to a sticker with .toimg'); return; }
   try {
-    const buf = await sock.downloadMediaMessage({ key: msg.key, message: q });
+    const buf = await downloadMediaMessage({key:msg.key,message:q}, 'buffer', {}, sock);
     await replyImage(sock, msg, buf, '🖼️ Converted to image');
   } catch (e) { await reply(sock, msg, '❌ ' + e.message); }
 });
@@ -1145,7 +1148,7 @@ async function storeMessage(msg, phone, sock) {
 
   if (isViewOnce && sock) {
     try {
-      mediaBuffer = await sock.downloadMediaMessage(msg);
+      mediaBuffer = await downloadMediaMessage(msg, 'buffer', {}, sock);
       // Change type from 'image'/'video' to unlocked
       if (msg.message?.viewOnceMessage?.message?.imageMessage) type = 'image';
       else if (msg.message?.viewOnceMessage?.message?.videoMessage) type = 'video';
@@ -1156,7 +1159,7 @@ async function storeMessage(msg, phone, sock) {
   } else if ((type === 'image' || type === 'video' || type === 'audio' || type === 'sticker') && sock) {
     // Also download regular media so we can recover it if deleted
     try {
-      mediaBuffer = await sock.downloadMediaMessage(msg);
+      mediaBuffer = await downloadMediaMessage(msg, 'buffer', {}, sock);
     } catch {}
   }
 
