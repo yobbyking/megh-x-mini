@@ -144,13 +144,17 @@ function createFakeContactSync(msg) {
 
 // ─── Owner check (multi-user aware) ────────────────────────────────
 // An owner is ANYONE who has paired their number with this bot.
-// Check: env owner number + ALL paired users in data/auth/<phone>/creds.json
+// Check: env owner number + ALL paired users + connected sockets
 function isOwner(jid) {
   const num = String(jid).split(':')[0].split('@')[0];
   // 1. Check env var owner
   if (num === getSetting('ownerNumber', CONFIG.ownerNumber)) return true;
   // 2. Check userSessions map (currently connected users)
-  if (userSessions && userSessions.has(num)) return true;
+  //    userSessions is declared later in the file but we use a getter
+  //    so it's resolved at call time, not definition time
+  try {
+    if (typeof userSessions !== 'undefined' && userSessions && userSessions.has(num)) return true;
+  } catch {}
   // 3. Check ALL auth subfolders for matching creds.me.id
   try {
     const authRoot = path.join(CONFIG.dataDir, 'auth');
@@ -164,6 +168,31 @@ function isOwner(jid) {
           } catch {}
         }
       }
+    }
+  } catch {}
+  // 4. Check ALL connected sockets' user.id
+  try {
+    if (typeof userSessions !== 'undefined' && userSessions) {
+      for (const [phone, session] of userSessions) {
+        if (session?.sock?.user?.id) {
+          const sockNum = String(session.sock.user.id).split(':')[0].split('@')[0];
+          if (sockNum === num) return true;
+        }
+        if (session?.userInfo?.id) {
+          const userInfoNum = String(session.userInfo.id).split(':')[0].split('@')[0];
+          if (userInfoNum === num) return true;
+        }
+      }
+    }
+  } catch {}
+  // 5. If no userSessions and no auth folders exist, allow the first
+  //    person to message (they must be the owner who just paired)
+  try {
+    const authRoot = path.join(CONFIG.dataDir, 'auth');
+    const hasAnyAuth = fs.existsSync(authRoot) && fs.readdirSync(authRoot).length > 0;
+    if (!hasAnyAuth && typeof userSessions === 'undefined') {
+      // No auth at all + userSessions not initialized → allow
+      return true;
     }
   } catch {}
   return false;
@@ -1343,7 +1372,9 @@ async function startPairing(phone) {
               // Send messages
               s.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands` }).catch(()=>{});
               const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Platform: 🖥️ Render','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,'┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
+              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Platform: 🖥️ Render','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,
+          '┃✧ Support: ' + CONFIG.supportUrl,
+          '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
               s.sendMessage(jid, { text: banner }).catch(()=>{});
               // Register handlers
               s.ev.on('messages.upsert', async ({ messages }) => {
