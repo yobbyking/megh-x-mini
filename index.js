@@ -295,27 +295,26 @@ function buildFullMenu() {
   const cats = Object.keys(COMMAND_LIST);
   const totalCmds = Object.values(COMMAND_LIST).reduce((a,b) => a + b.length, 0);
 
-  let out = `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ ✦  *${smallCaps(CONFIG.botName)} · ALL COMMANDS*  ✦
-┃   ${totalCmds} commands · ${cats.length} categories
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+  let out = `┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ ✦ *${smallCaps(CONFIG.botName)} · [${smallCaps('MENU')}]* ✦
+┃ \`coded by yobby_mking\`
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
 
-  // Single-row per category — clean, well-arranged, small caps
+  // Each category with emoji header + arrow-prefixed commands
   for (const cat of cats) {
     const cmds = COMMAND_LIST[cat];
     const emoji = CAT_EMOJI[cat];
     const name = smallCaps(CAT_NAME[cat]);
     out += `${emoji} *${name}*\n`;
-    // Each command on its own line, prefixed with ✦, in small caps
     for (const c of cmds) {
-      out += `   ✦ ${smallCaps(c)}\n`;
+      out += `> *┋ ✦ ${smallCaps(c)}*\n`;
     }
     out += '\n';
   }
 
-  out += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⬅️  Type *${prefix}menu* to go *BACK TO MENU*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  out += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⬅️ ${smallCaps('Type')} *${prefix}menu* ${smallCaps('to go')} *${smallCaps('BACK TO MENU')}*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   return out;
 }
 
