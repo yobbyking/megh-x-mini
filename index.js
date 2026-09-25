@@ -34,15 +34,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import P from 'pino';
 import Database from 'better-sqlite3';
-import makeWASocket, {
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  Browsers,
-  proto,
-  downloadMediaMessage
-} from 'mrxd-baileys';
+import mrxdBaileys from 'mrxd-baileys';
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
+  fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers,
+  downloadMediaMessage, proto } = mrxdBaileys;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
