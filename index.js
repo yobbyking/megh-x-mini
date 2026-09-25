@@ -34,10 +34,11 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import P from 'pino';
 import Database from 'better-sqlite3';
-import baileys from '@whiskeysockets/baileys';
+import baileysPkg from '@whiskeysockets/baileys';
+import { Browsers } from '@whiskeysockets/baileys';
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
-  fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers,
-  downloadMediaMessage, proto } = baileys;
+  fetchLatestBaileysVersion, makeCacheableSignalKeyStore,
+  downloadMediaMessage, proto } = baileysPkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
