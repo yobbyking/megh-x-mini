@@ -34,9 +34,9 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import P from 'pino';
 import Database from 'better-sqlite3';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const baileys = require('@whiskeysockets/baileys');
+// ★ @whiskeysockets/baileys is ESM-only. Can't require() it, and default
+// import doesn't expose named exports properly. Use dynamic import.
+const baileys = await import('@whiskeysockets/baileys');
 const { makeWASocket, useMultiFileAuthState, DisconnectReason,
   fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers,
   downloadMediaMessage, proto, generateWAMessage } = baileys;
