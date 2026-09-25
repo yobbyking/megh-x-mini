@@ -1198,7 +1198,7 @@ async function startUserBot(phone, authFolder) {
 
   const userSock = makeWASocket({
     version, auth: state,
-    printQRInTerminal: false, logger,
+    printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })),
     browser: CONFIG.browser,
     generateHighQualityLinkPreview: true,
     markOnlineOnConnect: false, syncFullHistory: false,
@@ -1347,17 +1347,21 @@ async function startPairing(phone) {
   // ★ Use built-in version (don't call fetchLatestBaileysVersion — it fetches
   //    from an external URL that may fail)
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+  console.log(`[PAIR ${webId}] Auth state loaded, creating socket...`);
   const pairSock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
-    logger,
+    logger: P({ level: 'debug' }, P.destination({ sync: true })),
     browser: Browsers.appropriate('Chrome'),
     keepAliveIntervalMs: 30000,
+    connectTimeoutMs: 30000,
+    qrTimeout: 60000,
     markOnlineOnConnect: false,
     syncFullHistory: false,
     linkPreview: false
   });
   entry.sock = pairSock;
+  console.log(`[PAIR ${webId}] Socket created, registering handlers...`);
   pairSock.ev.on('creds.update', saveCreds);
 
   let botHandlersRegistered = false;
@@ -1458,7 +1462,7 @@ async function startPairing(phone) {
       setTimeout(async () => {
         try {
           const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(authFolder);
-          const s = makeWASocket({ auth: s2, printQRInTerminal: false, logger, browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
+          const s = makeWASocket({ auth: s2, printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })), browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
           entry.sock = s;
           s.ev.on('creds.update', sc2);
           // Re-register the same handler on the new socket
