@@ -1197,9 +1197,9 @@ async function startUserBot(phone, authFolder) {
   console.log(`[BOT ${phone}] Baileys v${version.join('.')}${isLatest ? ' (latest)' : ''}`);
 
   const userSock = makeWASocket({
-    version, auth: state,
+    version: [2, 3000, 1043857760], auth: state,
     printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })),
-    browser: CONFIG.browser,
+    browser: Browsers.appropriate('Chrome'),
     generateHighQualityLinkPreview: true,
     markOnlineOnConnect: false, syncFullHistory: false,
     shouldIgnoreJid: () => false,
@@ -1349,6 +1349,7 @@ async function startPairing(phone) {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   console.log(`[PAIR ${webId}] Auth state loaded, creating socket...`);
   const pairSock = makeWASocket({
+    version: [2, 3000, 1043857760], // Latest official Baileys version
     auth: state,
     printQRInTerminal: false,
     logger: P({ level: 'debug' }, P.destination({ sync: true })),
@@ -1462,7 +1463,7 @@ async function startPairing(phone) {
       setTimeout(async () => {
         try {
           const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(authFolder);
-          const s = makeWASocket({ auth: s2, printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })), browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
+          const s = makeWASocket({ version: [2, 3000, 1043857760], auth: s2, printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })), browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
           entry.sock = s;
           s.ev.on('creds.update', sc2);
           // Re-register the same handler on the new socket
