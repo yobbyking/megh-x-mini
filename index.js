@@ -1698,8 +1698,9 @@ $('resetBtn').addEventListener('click',()=>location.reload());
 printBanner();
 
 // ★ MODE: Render (pairing + bot) or Railway (bot only)
-// - Render: PAIRING_MODE=true → start Express + pairing + bot
-// - Railway: PAIRING_MODE=false → bot only (reconnect existing sessions)
+// - Render: PAIRING_MODE=true → Express + pairing UI + bot
+// - Railway: PAIRING_MODE=false → Express (health only) + bot
+// Both start Express (Railway needs a web server to detect as "live")
 const PAIRING_MODE = process.env.PAIRING_MODE !== 'false';
 
 // ─── On boot: reconnect any previously-paired users ──────────────
@@ -1734,13 +1735,28 @@ if (PAIRING_MODE) {
   reconnectAllUsers();
   console.log('  ℹ Render mode: Pairing site + Bot. Visit the site to pair.\n');
 } else {
-  // ★ RAILWAY MODE: Bot only (no Express server, no pairing site)
-  console.log('  ╔══════════════════════════════════════════════╗');
-  console.log('  ║   MEGH X-MINI — Bot Only (Railway)           ║');
-  console.log('  ╚══════════════════════════════════════════════╝\n');
+  // ★ RAILWAY MODE: Express (health only) + bot 24/7
+  // Railway needs a web server to detect as "live" — start Express
+  // but serve a simple status page instead of the pairing UI
+  app.get('/', (req, res) => {
+    res.send(`<html><body style="background:#0a0a14;color:#00e5ff;font-family:monospace;text-align:center;padding:50px">
+    <h1>MEGH X-MINI</h1>
+    <p>Bot is running on Railway 24/7</p>
+    <p>Connected users: ${userSessions.size}</p>
+    <p>Pair on: https://megh-x-mini.onrender.com/</p>
+    </body></html>`);
+  });
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n  ╔══════════════════════════════════════════════╗`);
+    console.log(`  ║   MEGH X-MINI — Bot 24/7 on Railway :${PORT}`.padEnd(48) + `║`);
+    console.log(`  ╚══════════════════════════════════════════════╝\n`);
+    console.log(`  🤖 Bot only mode (no pairing UI)`);
+    console.log(`  🌐 Status page:  http://0.0.0.0:${PORT}/`);
+    console.log(`  💾 SQLite:        data/bot.db\n`);
+  });
   reconnectAllUsers();
-  console.log('  ℹ Railway mode: Bot only. Reconnecting existing sessions.\n');
-  console.log('  ℹ Pair on the Render site, then Railway keeps the bot alive 24/7.\n');
+  console.log('  ℹ Railway mode: Bot 24/7. Reconnecting existing sessions.\n');
+  console.log('  ℹ Pair on the Render site, Railway keeps the bot alive.\n');
 }
 
 process.on('SIGTERM', () => { console.log('\n  ⊘ SIGTERM — shutting down'); process.exit(0); });
