@@ -1486,17 +1486,42 @@ async function startPairing(phone) {
     }
   });
 
-  // Wait for QR event (socket ready), then request pairing code
+  // Wait for socket ready, then request pairing code
+  // ★ Handle reconnection: if connection closes, DON'T reject — wait for
+  //    the reconnect handler (registered above) to create a new socket
+  //    that will fire 'connecting' or 'qr' or 'open'.
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Socket timeout — WhatsApp may be rate-limiting. Retry in 30s.')), 60000);
     const handler = (u) => {
-      if (u.qr || u.connection === 'open') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); resolve(); }
-      if (u.connection === 'close') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); reject(new Error('Connection closed')); }
+      // Resolve on QR (socket fully ready) or 'open' (already connected)
+      if (u.qr) { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); resolve(); }
+      else if (u.connection === 'open') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); resolve(); }
+      else if (u.connection === 'connecting') {
+        // Socket is connecting — wait, don't resolve yet
+        // But DO log so we can see it's working
+        console.log(`[PAIR ${webId}] Socket connecting...`);
+      }
+      // ★ DON'T reject on 'close' — the reconnect handler will create
+      //    a new socket. Just wait.
+      else if (u.connection === 'close') {
+        const sc = u.lastDisconnect?.error?.output?.statusCode;
+        console.log(`[PAIR ${webId}] Socket closed (${sc}) during initial wait — waiting for reconnect...`);
+        // If logged out, reject
+        if (sc === DisconnectReason.loggedOut || sc === 410) {
+          clearTimeout(timeout);
+          pairSock.ev.off('connection.update', handler);
+          reject(new Error('WhatsApp rejected the connection (logged out). Try a different number.'));
+        }
+        // Otherwise: don't reject — the reconnect handler (registered above)
+        // will create a new socket and fire connection.update again.
+      }
     };
     pairSock.ev.on('connection.update', handler);
   });
 
-  const code = await pairSock.requestPairingCode(phone);
+  // Use entry.sock (may have been replaced by the reconnect handler)
+  const activeSock = entry.sock || pairSock;
+  const code = await activeSock.requestPairingCode(phone);
   entry.code = code;
   entry.status = 'code_sent';
   console.log(`[PAIR ${webId}] Code: ${code} for +${phone}`);
