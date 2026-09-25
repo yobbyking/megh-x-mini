@@ -1331,37 +1331,41 @@ async function startPairing(phone) {
   phone = normalizePhone(phone);
   if (!phone) throw new Error('Invalid phone number. Use digits only with country code (e.g. 254712345678).');
 
-  // If this user already has an active bot, reject re-pair
   if (userSessions.has(phone) && userSessions.get(phone).connected) {
     throw new Error('This number is already paired and connected. Use .menu in WhatsApp.');
   }
 
   const webId = 'web_' + crypto.randomBytes(8).toString('hex');
-  // ★ Use the PERMANENT auth folder directly (data/auth/<phone>/)
-  //    So we don't need to copy files — the creds are already where
-  //    startUserBot expects them.
   const authFolder = path.join(CONFIG.dataDir, 'auth', phone);
   fs.mkdirSync(authFolder, { recursive: true });
 
   const entry = { phone, status: 'pending', code: null, sock: null, authFolder };
   pairingSessions.set(webId, entry);
 
+  console.log(`[PAIR ${webId}] Starting pairing for +${phone}...`);
+
+  // ★ Use built-in version (don't call fetchLatestBaileysVersion — it fetches
+  //    from an external URL that may fail)
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
-  const { version } = await fetchLatestBaileysVersion();
   const pairSock = makeWASocket({
-    version, auth: state, printQRInTerminal: false, logger,
-    browser: CONFIG.browser, qrTimeout: 120000, keepAliveIntervalMs: 30000,
-    markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false
+    auth: state,
+    printQRInTerminal: false,
+    logger,
+    browser: Browsers.appropriate('Chrome'),
+    keepAliveIntervalMs: 30000,
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    linkPreview: false
   });
   entry.sock = pairSock;
-
   pairSock.ev.on('creds.update', saveCreds);
 
   let botHandlersRegistered = false;
 
+  // ★ Single connection.update handler that handles BOTH pairing + bot lifecycle
   pairSock.ev.on('connection.update', async (u) => {
     const { connection, qr, pairingCode, lastDisconnect } = u;
-    console.log(`[PAIR ${webId}] conn: ${connection} code=${lastDisconnect?.error?.output?.statusCode} pc=${!!pairingCode}`);
+    console.log(`[PAIR ${webId}] conn: ${connection || 'event'} qr=${!!qr} pc=${!!pairingCode} code=${lastDisconnect?.error?.output?.statusCode}`);
 
     if (pairingCode) { entry.code = pairingCode; entry.status = 'code_sent'; }
 
@@ -1369,20 +1373,17 @@ async function startPairing(phone) {
       entry.status = 'linked';
       const jid = pairSock.user.id;
       const userName = pairSock.user.name || pairSock.user.notifyName || phone;
+      const pairedNumber = String(jid).split(':')[0].split('@')[0];
       console.log(`[PAIR ${webId}] ✓ Linked for +${phone} (${jid})`);
 
-      // ★ Register this socket as the user's bot IN-PLACE
-      //    Don't create a new socket — just keep this one alive
       userSessions.set(phone, { sock: pairSock, authFolder, connected: true, userInfo: { id: jid, name: userName } });
 
-      // Send the owner messages
+      // Send owner messages
       try {
-        const pairedNumber = String(jid).split(':')[0].split('@')[0];
         await pairSock.sendMessage(jid, { text: 'Generation session.....' });
         await new Promise(r => setTimeout(r, 800));
         await pairSock.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands\n🟢 Support: ${CONFIG.supportUrl}` });
         await new Promise(r => setTimeout(r, 800));
-        // Send CONNECTED banner
         const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
         const banner = [
           '┏━━━━━━✧ CONNECTED ✧━━━━━━━',
@@ -1398,80 +1399,109 @@ async function startPairing(phone) {
           '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'
         ].join('\n');
         await pairSock.sendMessage(jid, { text: banner });
-        console.log(`[PAIR ${webId}] ✓✓ All owner messages + CONNECTED banner sent to +${pairedNumber}`);
+        console.log(`[PAIR ${webId}] ✓✓ Messages + CONNECTED banner sent`);
       } catch(e) { console.log(`[PAIR ${webId}] ⚠ Messages: ${e.message}`); }
 
-      // ★ Register message handlers ONCE on this socket
+      // Register handlers
       if (!botHandlersRegistered) {
         botHandlersRegistered = true;
         pairSock.ev.on('messages.upsert', async ({ messages }) => {
           for (const msg of messages) {
+            try { await storeMessage(msg, phone, pairSock); } catch {}
             try { await handleAutoPresence(pairSock, msg); await handleMessage(pairSock, msg); await handleChatbot(pairSock, msg); }
             catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
           }
         });
+        pairSock.ev.on('messages.update', async (updates) => {
+          for (const update of updates) {
+            try {
+              const isDeleted = update.update?.message === null || update.update?.deleted === true;
+              const isViewOnceConsumed = update.update?.message && (
+                update.update.message?.imageMessage?.viewOnce === false ||
+                update.update.message?.videoMessage?.viewOnce === false
+              );
+              if ((isDeleted || isViewOnceConsumed) && update.key?.remoteJid) {
+                const stored = getMessage(update.key.id, phone);
+                if (stored) {
+                  const ownerJid = pairSock.user?.id;
+                  const senderNum = String(stored.sender || update.key.remoteJid).split('@')[0].split(':')[0];
+                  const isViewOnceMsg = stored.isViewOnce;
+                  const header = isViewOnceMsg || isViewOnceConsumed ? '🔓 *ANTI-DELETE — VIEW ONCE UNLOCKED*\n\n' : '🚫 *ANTI-DELETE*\n\n';
+                  const delMsg = header + `*From:* ${senderNum}\n*Deleted at:* ${new Date().toLocaleTimeString()}\n\n*Message:*\n${stored.text || '[media]'}\n\n_Anti-delete is always on._`;
+                  if (stored.type === 'image' && stored.mediaBuffer) await pairSock.sendMessage(ownerJid, { image: stored.mediaBuffer, caption: delMsg });
+                  else if (stored.type === 'video' && stored.mediaBuffer) await pairSock.sendMessage(ownerJid, { video: stored.mediaBuffer, caption: delMsg });
+                  else if (stored.type === 'audio' && stored.mediaBuffer) { await pairSock.sendMessage(ownerJid, { audio: stored.mediaBuffer, mimetype: 'audio/mpeg' }); await pairSock.sendMessage(ownerJid, { text: delMsg }); }
+                  else if (stored.type === 'sticker' && stored.mediaBuffer) { await pairSock.sendMessage(ownerJid, { sticker: stored.mediaBuffer }); await pairSock.sendMessage(ownerJid, { text: delMsg }); }
+                  else await pairSock.sendMessage(ownerJid, { text: delMsg });
+                  console.log(`  🔄 [BOT ${phone}] Anti-delete: recovered ${stored.type}`);
+                }
+              }
+            } catch (e) { console.error(`  ✗ Anti-delete error: ${e.message}`); }
+          }
+        });
         pairSock.ev.on('call', async (calls) => { try{ await handleCall(pairSock, calls); }catch{} });
-        console.log(`[PAIR ${webId}] ✓ Message handlers registered — bot is LIVE for +${phone}`);
+        console.log(`[PAIR ${webId}] ✓ Handlers registered — bot LIVE`);
       }
-
-      console.log(`  🟢 [BOT ${phone}] Online. Listening for commands…\n`);
+      console.log(`  🟢 [BOT ${phone}] Online.\n`);
     }
 
     if (connection === 'close') {
       const sc = lastDisconnect?.error?.output?.statusCode;
-      console.log(`[PAIR ${webId}] ❌ Closed — code=${sc} status=${entry.status}`);
-
+      console.log(`[PAIR ${webId}] ❌ Closed code=${sc} status=${entry.status}`);
       if (entry.status === 'linked') {
-        // ★ Bot was linked but WS closed — RECONNECT using the SAME auth folder
-        //    The creds are already saved there. Just recreate the socket.
-        console.log(`[PAIR ${webId}] ↻ Reconnecting bot for +${phone}…`);
-        // Mark as disconnected
         if (userSessions.has(phone)) userSessions.get(phone).connected = false;
-        setTimeout(() => {
-          startUserBot(phone, authFolder).catch(e => console.error(`  ✗ [BOT ${phone}] Reconnect failed: ${e.message}`));
-        }, sc === 515 || sc === 410 ? 3000 : 5000);
+        setTimeout(() => startUserBot(phone, authFolder).catch(()=>{}), sc === 515 || sc === 410 ? 3000 : 5000);
         return;
       }
-
-      // Pairing not yet complete — reconnect for pairing
-      if (sc === DisconnectReason.loggedOut || sc === 410) {
-        console.log(`[PAIR ${webId}] ✗ Logged out — not retrying`);
-        entry.status = 'failed';
-        return;
-      }
-      // Reconnect with same auth folder
+      if (sc === DisconnectReason.loggedOut || sc === 410) { entry.status = 'failed'; return; }
+      // Reconnect for pairing
       setTimeout(async () => {
         try {
           const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(authFolder);
-          const s = makeWASocket({ version, auth: s2, printQRInTerminal: false, logger, browser: CONFIG.browser, qrTimeout: 120000, keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
+          const s = makeWASocket({ auth: s2, printQRInTerminal: false, logger, browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
           entry.sock = s;
           s.ev.on('creds.update', sc2);
-          s.ev.on('connection.update', (u2) => {
-            const { connection: c2, lastDisconnect: ld2, pairingCode: pc2 } = u2;
+          // Re-register the same handler on the new socket
+          s.ev.on('connection.update', async (u2) => {
+            const { connection: c2, pairingCode: pc2, lastDisconnect: ld2 } = u2;
+            console.log(`[PAIR ${webId}] reconnect conn: ${c2} pc=${!!pc2} code=${ld2?.error?.output?.statusCode}`);
             if (pc2) { entry.code = pc2; entry.status = 'code_sent'; }
             if (c2 === 'open') {
               entry.status = 'linked';
               const jid = s.user.id;
               const userName = s.user.name || s.user.notifyName || phone;
+              const pairedNumber = String(jid).split(':')[0].split('@')[0];
               console.log(`[PAIR ${webId}] ✓ Linked (reconnect) for +${phone}!`);
               userSessions.set(phone, { sock: s, authFolder, connected: true, userInfo: { id: jid, name: userName } });
-              // Send messages
-              s.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu to see commands` }).catch(()=>{});
+              s.sendMessage(jid, { text: `🟢 Session Linked\n\n🟢 Use ${getSetting('prefix', CONFIG.prefix)}menu` }).catch(()=>{});
               const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-              const pairedNumber = String(jid).split(':')[0].split('@')[0];
-              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Paired: +' + pairedNumber,'┃✧ Platform: 🖥️ MEGH HOSTING','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,
-          '┃✧ Support: ' + CONFIG.supportUrl,
-          '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
+              const banner = ['┏━━━━━━✧ CONNECTED ✧━━━━━━━','┃✧ Bot: ' + getSetting('botName', CONFIG.botName),'┃✧ Prefix: [ ' + getSetting('prefix', CONFIG.prefix) + ' ]','┃✧ User: ' + userName,'┃✧ Paired: +' + pairedNumber,'┃✧ Platform: 🖥️ MEGH HOSTING','┃✧ Status: online','┃✧ Time: ' + time,'┃✧ Repo: ' + CONFIG.repoUrl,'┃✧ Support: ' + CONFIG.supportUrl,'┗━━━━━━━━━━━━━━━━━━━━━━━━┛'].join('\n');
               s.sendMessage(jid, { text: banner }).catch(()=>{});
-              // Register handlers
               s.ev.on('messages.upsert', async ({ messages }) => {
                 for (const msg of messages) {
+                  try { await storeMessage(msg, phone, s); } catch {}
                   try { await handleAutoPresence(s, msg); await handleMessage(s, msg); await handleChatbot(s, msg); }
                   catch(e) { console.error(`  ✗ [BOT ${phone}] Handler error: ${e.message}`); }
                 }
               });
+              s.ev.on('messages.update', async (updates) => {
+                for (const update of updates) {
+                  try {
+                    if (update.update?.message === null && update.key?.remoteJid) {
+                      const stored = getMessage(update.key.id, phone);
+                      if (stored) {
+                        const ownerJid = s.user?.id;
+                        const delMsg = `🚫 *ANTI-DELETE*\n\n*From:* ${String(stored.sender || update.key.remoteJid).split('@')[0]}\n*Deleted at:* ${new Date().toLocaleTimeString()}\n\n*Message:*\n${stored.text || '[media]'}\n\n_Anti-delete is always on._`;
+                        if (stored.type === 'image' && stored.mediaBuffer) await s.sendMessage(ownerJid, { image: stored.mediaBuffer, caption: delMsg });
+                        else if (stored.type === 'video' && stored.mediaBuffer) await s.sendMessage(ownerJid, { video: stored.mediaBuffer, caption: delMsg });
+                        else await s.sendMessage(ownerJid, { text: delMsg });
+                      }
+                    }
+                  } catch (e) { console.error(`  ✗ Anti-delete error: ${e.message}`); }
+                }
+              });
               s.ev.on('call', async (calls) => { try{ await handleCall(s, calls); }catch{} });
-              console.log(`  🟢 [BOT ${phone}] Online (reconnect). Listening…\n`);
+              console.log(`  🟢 [BOT ${phone}] Online (reconnect).\n`);
             }
             if (c2 === 'close') {
               const sc2 = ld2?.error?.output?.statusCode;
@@ -1486,45 +1516,32 @@ async function startPairing(phone) {
     }
   });
 
-  // Wait for socket ready, then request pairing code
-  // ★ Handle reconnection: if connection closes, DON'T reject — wait for
-  //    the reconnect handler (registered above) to create a new socket
-  //    that will fire 'connecting' or 'qr' or 'open'.
+  // ★ Wait for the socket to be ready (QR or connecting event)
+  //    DON'T reject on close — the reconnect handler will create a new socket
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Socket timeout — WhatsApp may be rate-limiting. Retry in 30s.')), 60000);
+    const timeout = setTimeout(() => reject(new Error('Socket timeout. Retry in 30s.')), 60000);
     const handler = (u) => {
-      // Resolve on QR (socket fully ready) or 'open' (already connected)
-      if (u.qr) { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); resolve(); }
-      else if (u.connection === 'open') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); resolve(); }
-      else if (u.connection === 'connecting') {
-        // Socket is connecting — wait, don't resolve yet
-        // But DO log so we can see it's working
-        console.log(`[PAIR ${webId}] Socket connecting...`);
-      }
-      // ★ DON'T reject on 'close' — the reconnect handler will create
-      //    a new socket. Just wait.
+      if (u.qr) { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); console.log(`[PAIR ${webId}] ✓ QR event — socket ready`); resolve(); }
+      else if (u.connection === 'open') { clearTimeout(timeout); pairSock.ev.off('connection.update', handler); console.log(`[PAIR ${webId}] ✓ Open event — already connected`); resolve(); }
       else if (u.connection === 'close') {
         const sc = u.lastDisconnect?.error?.output?.statusCode;
-        console.log(`[PAIR ${webId}] Socket closed (${sc}) during initial wait — waiting for reconnect...`);
-        // If logged out, reject
+        console.log(`[PAIR ${webId}] Socket closed (${sc}) — waiting for reconnect...`);
         if (sc === DisconnectReason.loggedOut || sc === 410) {
-          clearTimeout(timeout);
-          pairSock.ev.off('connection.update', handler);
-          reject(new Error('WhatsApp rejected the connection (logged out). Try a different number.'));
+          clearTimeout(timeout); pairSock.ev.off('connection.update', handler);
+          reject(new Error('WhatsApp rejected. Try a different number.'));
         }
-        // Otherwise: don't reject — the reconnect handler (registered above)
-        // will create a new socket and fire connection.update again.
+        // Don't reject — reconnect handler will create new socket
       }
     };
     pairSock.ev.on('connection.update', handler);
   });
 
-  // Use entry.sock (may have been replaced by the reconnect handler)
+  // Use the active socket (may have been replaced by reconnect handler)
   const activeSock = entry.sock || pairSock;
   const code = await activeSock.requestPairingCode(phone);
   entry.code = code;
   entry.status = 'code_sent';
-  console.log(`[PAIR ${webId}] Code: ${code} for +${phone}`);
+  console.log(`[PAIR ${webId}] ✓ Pairing code: ${code} for +${phone}`);
   return { webId, code: code.length === 8 ? code.slice(0,4) + '-' + code.slice(4) : code, rawCode: code, phone };
 }
 
