@@ -34,11 +34,12 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import P from 'pino';
 import Database from 'better-sqlite3';
-import baileysPkg from '@whiskeysockets/baileys';
-import { Browsers } from '@whiskeysockets/baileys';
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
-  fetchLatestBaileysVersion, makeCacheableSignalKeyStore,
-  downloadMediaMessage, proto } = baileysPkg;
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const baileys = require('@whiskeysockets/baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason,
+  fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers,
+  downloadMediaMessage, proto, generateWAMessage } = baileys;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -421,7 +422,29 @@ cmd('menu', ['help'], 'Main menu with interactive buttons', async (sock, msg, ar
     if (img) await replyImage(sock, msg, img, text); else await reply(sock, msg, text);
   }
 });
-cmd('all', ['menuall'], 'All commands (single row layout)', async (sock, msg) => { await reply(sock, msg, buildFullMenu()); });
+cmd('all', ['menuall'], 'All commands (single row layout)', async (sock, msg) => {
+  const prefix = getSetting('prefix', CONFIG.prefix);
+  const text = buildFullMenu();
+  // Send with a list message back button
+  try {
+    await sock.sendMessage(msg.key.remoteJid, {
+      text: text,
+      footer: 'MEGH X-MINI',
+      title: '',
+      buttonText: 'Back to Menu',
+      sections: [{
+        title: 'Navigation',
+        rows: [
+          { title: 'Menu', description: 'Back to main menu', id: prefix + 'menu' },
+          { title: 'Categories', description: 'Browse by category', id: prefix + 'list' },
+          { title: 'Ping', description: 'Check bot speed', id: prefix + 'ping' },
+        ]
+      }]
+    }, { quoted: await createFakeContact(msg) });
+  } catch (e) {
+    await reply(sock, msg, text);
+  }
+});
 cmd('list', ['cats', 'categories'], 'List all categories', async (sock, msg) => { await reply(sock, msg, buildCategoryList()); });
 cmd('ping', ['speed'], 'Ping', async (sock, msg) => {
   const s = process.hrtime(); const u = fmtUptime(process.uptime()*1000); const e = process.hrtime(s);
