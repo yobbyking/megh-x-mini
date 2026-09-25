@@ -34,10 +34,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import P from 'pino';
 import Database from 'better-sqlite3';
-import mrxdBaileys from 'mrxd-baileys';
+import baileys from '@whiskeysockets/baileys';
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
   fetchLatestBaileysVersion, makeCacheableSignalKeyStore, Browsers,
-  downloadMediaMessage, proto } = mrxdBaileys;
+  downloadMediaMessage, proto } = baileys;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1197,7 +1197,7 @@ async function startUserBot(phone, authFolder) {
   console.log(`[BOT ${phone}] Baileys v${version.join('.')}${isLatest ? ' (latest)' : ''}`);
 
   const userSock = makeWASocket({
-    version: [2, 3000, 1048389532], auth: state,
+    version: (await fetchLatestBaileysVersion()).version, auth: state,
     printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })),
     browser: Browsers.appropriate('Chrome'),
     generateHighQualityLinkPreview: true,
@@ -1349,7 +1349,7 @@ async function startPairing(phone) {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   console.log(`[PAIR ${webId}] Auth state loaded, creating socket...`);
   const pairSock = makeWASocket({
-    version: [2, 3000, 1048389532], // Latest official Baileys version
+    version: (await fetchLatestBaileysVersion()).version, // Latest official Baileys version
     auth: state,
     printQRInTerminal: false,
     logger: P({ level: 'debug' }, P.destination({ sync: true })),
@@ -1463,7 +1463,7 @@ async function startPairing(phone) {
       setTimeout(async () => {
         try {
           const { state: s2, saveCreds: sc2 } = await useMultiFileAuthState(authFolder);
-          const s = makeWASocket({ version: [2, 3000, 1048389532], auth: s2, printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })), browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
+          const s = makeWASocket({ version: (await fetchLatestBaileysVersion()).version, auth: s2, printQRInTerminal: false, logger: P({ level: "debug" }, P.destination({ sync: true })), browser: Browsers.appropriate('Chrome'), keepAliveIntervalMs: 30000, markOnlineOnConnect: false, syncFullHistory: false, linkPreview: false });
           entry.sock = s;
           s.ev.on('creds.update', sc2);
           // Re-register the same handler on the new socket
