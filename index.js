@@ -1697,18 +1697,12 @@ $('resetBtn').addEventListener('click',()=>location.reload());
 // ─── BOOT ──────────────────────────────────────────────────────────
 printBanner();
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  ╔══════════════════════════════════════════════╗`);
-  console.log(`  ║   MEGH X-MINI — Pairing + Bot on :${PORT}`.padEnd(48) + `║`);
-  console.log(`  ╚══════════════════════════════════════════════╝\n`);
-  console.log(`  🌐 Pairing site:  http://0.0.0.0:${PORT}`);
-  console.log(`  📲 Pair endpoint: POST /api/pair`);
-  console.log(`  💾 SQLite:        data/bot.db\n`);
-});
+// ★ MODE: Render (pairing + bot) or Railway (bot only)
+// - Render: PAIRING_MODE=true → start Express + pairing + bot
+// - Railway: PAIRING_MODE=false → bot only (reconnect existing sessions)
+const PAIRING_MODE = process.env.PAIRING_MODE !== 'false';
 
 // ─── On boot: reconnect any previously-paired users ──────────────
-// Scan data/auth/ for existing auth folders (one per phone number)
-// and start a bot for each. This survives Render restarts.
 function reconnectAllUsers() {
   const authRoot = path.join(CONFIG.dataDir, 'auth');
   if (!fs.existsSync(authRoot)) return;
@@ -1727,10 +1721,27 @@ function reconnectAllUsers() {
 // Download menu image in background
 downloadMenuImage().catch(() => {});
 
-// Reconnect any existing sessions (survives Render restarts)
-reconnectAllUsers();
-
-console.log('  ℹ Bot is ready. Visit the pairing site to pair a new number.\n');
+if (PAIRING_MODE) {
+  // ★ RENDER MODE: Express server + pairing site + bot
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n  ╔══════════════════════════════════════════════╗`);
+    console.log(`  ║   MEGH X-MINI — Pairing + Bot on :${PORT}`.padEnd(48) + `║`);
+    console.log(`  ╚══════════════════════════════════════════════╝\n`);
+    console.log(`  🌐 Pairing site:  http://0.0.0.0:${PORT}`);
+    console.log(`  📲 Pair endpoint: POST /api/pair`);
+    console.log(`  💾 SQLite:        data/bot.db\n`);
+  });
+  reconnectAllUsers();
+  console.log('  ℹ Render mode: Pairing site + Bot. Visit the site to pair.\n');
+} else {
+  // ★ RAILWAY MODE: Bot only (no Express server, no pairing site)
+  console.log('  ╔══════════════════════════════════════════════╗');
+  console.log('  ║   MEGH X-MINI — Bot Only (Railway)           ║');
+  console.log('  ╚══════════════════════════════════════════════╝\n');
+  reconnectAllUsers();
+  console.log('  ℹ Railway mode: Bot only. Reconnecting existing sessions.\n');
+  console.log('  ℹ Pair on the Render site, then Railway keeps the bot alive 24/7.\n');
+}
 
 process.on('SIGTERM', () => { console.log('\n  ⊘ SIGTERM — shutting down'); process.exit(0); });
 process.on('SIGINT', () => { console.log('\n  ⊘ SIGINT — shutting down'); process.exit(0); });

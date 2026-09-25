@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: megh-x-mini
+    name: megh-x-mini-pairing
     runtime: node
     plan: free
     buildCommand: npm install
@@ -9,6 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PAIRING_MODE
+        value: "true"
       - key: OWNER_NUMBER
         value: "254795314221"
       - key: OWNER_NAME
